@@ -23,7 +23,7 @@ import { ModuleComparisonModal } from "./module-comparison-modal"
 import { categories, sampleRows } from "@/lib/demo-data/migration"
 import { SUBSIDIARY_BY_ID, XERO_ORG_BY_ID } from "@/lib/demo-data/momento"
 import { useDemo } from "@/lib/demo-store"
-import { LAST_CLOSED_PERIOD, formatDate, lastDayOfPeriod, periodFromDate, periodLabel, periodsInScope, tbIssuePeriod } from "@/lib/periods"
+import { LAST_CLOSED_PERIOD, formatDate, lastDayOfPeriod, periodFromDate, periodsInScope } from "@/lib/periods"
 
 const TAB_ORDER = [
   "summary",
@@ -40,6 +40,7 @@ const TAB_ORDER = [
   "bank",
   "journals",
   "inventoryJournals",
+  "attachments",
   "stock",
   "jobs",
   "jobTasks",
@@ -47,11 +48,8 @@ const TAB_ORDER = [
   "jobBudgets",
   "jobCostRevenue",
   "retention",
+  "quotes",
   "purchaseOrders",
-  "timesheets",
-  "schedule",
-  "staff",
-  "billingRates",
   "warnings",
 ]
 
@@ -70,6 +68,7 @@ const TAB_LABEL: Record<string, string> = {
   bank: "Bank",
   journals: "Journals",
   inventoryJournals: "Inventory Journals",
+  attachments: "Attachments",
   stock: "Gojee · Stock",
   jobs: "Gojee · Jobs & WIP",
   jobTasks: "Gojee · Tasks",
@@ -77,11 +76,8 @@ const TAB_LABEL: Record<string, string> = {
   jobBudgets: "Gojee · Budgets",
   jobCostRevenue: "Gojee · Cost & Revenue",
   retention: "Gojee · Retention",
+  quotes: "Gojee · Quotes",
   purchaseOrders: "Gojee · Purchase Orders",
-  timesheets: "Gojee · Timesheets",
-  schedule: "Gojee · Schedule",
-  staff: "Gojee · Staff",
-  billingRates: "Gojee · Billing Rates",
   warnings: "Warnings",
 }
 
@@ -124,7 +120,6 @@ export default function MigrationReport() {
   const { state } = useDemo()
   const subId = state.netsuite.subsidiaryId
   const fromPeriod = periodFromDate(state.fromDate)
-  const issuePeriod = tbIssuePeriod(fromPeriod)
   const tabData = sampleRows(subId)
   const [activeTab, setActiveTab] = useState("summary")
   const [ringDrawn, setRingDrawn] = useState(false)
@@ -162,11 +157,7 @@ export default function MigrationReport() {
         category: "Journals",
         message: "Journal JE-HIL-2211 had a line in another subsidiary. It was balanced on intercompany loan account 1810-MHG.",
       },
-      {
-        id: 4,
-        category: "Trial balance",
-        message: `${periodLabel(issuePeriod)} GST rounding difference of $12.40 was posted to Rounding (860) during validation. All periods now match NetSuite.`,
-      },
+      { id: 4, category: "Attachments", message: "3 attachments over Xero's 25 MB limit were compressed before upload." },
     ],
     errors: [],
   }

@@ -13,7 +13,7 @@ The demo is built on the original 5-step UI, with one entity per migration (see 
 | R-14 Mapping incl. system accounts | Map: accounts, contacts, items, transactions and the Gojee tabs; account remapping incl. 630, 640, 860 |
 | R-21 Intercompany split | Map (Journals rule); Validate warning; Import log |
 | R-22 Type mapping | Map treatments; unit-tested in `lib/mapping/transaction-types.ts` |
-| R-33 Trial balance gate | Validate: Mar 2024 rounding difference + one-click fix |
+| R-33 Trial balance gate | Validate: trial balance compared period by period (all match) |
 | R-34–R-37 Freeze, delta, connect Gojee, Gojee load | Import: log and stall messages, Gojee categories |
 | R-41–R-45 Reports | Report: Comparative Reports tiles → new-tab reports with PDF and Excel |
 | R-46 Exceptions | Report: Warnings tab |
@@ -32,7 +32,7 @@ The demo is built on the original 5-step UI, with one entity per migration (see 
 | Job cost / revenue to date | SuiteQL transaction + transactionLine by project | "Job Cost & Revenue to Date": summaries, linked to Xero bill and invoice IDs |
 | WIP per job | Calculated | Cost to date − billed to date (Map rule; Jobs & WIP report) |
 | Retention held | Custom field / invoice line | "Retention Held" (fit-out jobs hold 5%) |
-| Timesheets (unbilled) | `record/v1/timeBill` (billed = false) | "Timesheets (unbilled)": employee, job, task, hours, date, billable |
-| Staff schedule | `record/v1/resourceAllocation` | "Staff Schedule" (future bookings) |
-| Staff | `record/v1/employee` | "Staff (link only)": matched to Xero payroll staff, not created |
-| Billing rates | SuiteQL charge rules / labor cost | "Billing Rates": partial fit, two complex rules simplified (Validate warning) |
+| Open quotes | SuiteQL · Estimate (open) | "Open Quotes" → Gojee quotes (added) |
+| Attachments | File Cabinet files on transactions | "Attachments" → Xero attachments (added) |
+
+Removed at the client's request (19 Oct 2026): unbilled timesheets, staff schedule, staff link, billing rates.

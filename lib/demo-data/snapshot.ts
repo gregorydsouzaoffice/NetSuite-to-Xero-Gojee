@@ -4,15 +4,14 @@
  */
 import { fmtMoney, round2, seeded } from "../format"
 import { LAST_CLOSED_PERIOD, lastDayOfPeriod } from "../periods"
+import { NETSUITE_CHART } from "./chart"
 import { CONTACTS, ITEMS, SUBSIDIARY_BY_ID } from "./momento"
 
-/** The deliberate trial-balance problem for the demo (R-33) */
-export const TB_ISSUE = { subsidiaryId: "3", period: "2024-03", difference: 12.4, account: "820" }
 /** Periods where Coranton's FX revaluations needed a reconciling journal */
 export const FX_RECONCILING_PERIODS = ["2023-06", "2024-06", "2025-06"]
 
 // ---------------------------------------------------------------------------
-// Trial balance
+// Trial balance — every account in the 159-account chart
 
 export interface TbRow {
   code: string
@@ -22,69 +21,45 @@ export interface TbRow {
   xero: number
 }
 
-const TB_ACCOUNTS: { code: string; xeroCode: string; name: string; side: 1 | -1; scale: number; inventory?: boolean }[] = [
-  { code: "1000", xeroCode: "090", name: "CBA Operating Account", side: 1, scale: 180000 },
-  { code: "1050", xeroCode: "095", name: "Undeposited Funds", side: 1, scale: 9000 },
-  { code: "1100", xeroCode: "610", name: "Accounts Receivable", side: 1, scale: 95000 },
-  { code: "1300", xeroCode: "630", name: "Inventory Asset", side: 1, scale: 60000, inventory: true },
-  { code: "1350", xeroCode: "640", name: "Work in Progress", side: 1, scale: 25000 },
-  { code: "1500", xeroCode: "715", name: "Kitchen Equipment", side: 1, scale: 240000 },
-  { code: "2000", xeroCode: "800", name: "Accounts Payable", side: -1, scale: 120000 },
-  { code: "2300", xeroCode: "820", name: "GST", side: -1, scale: 22000 },
-  { code: "2410", xeroCode: "826", name: "Superannuation Payable", side: -1, scale: 14000 },
-  { code: "3000", xeroCode: "950", name: "Share Capital", side: -1, scale: 100000 },
-  { code: "4000", xeroCode: "201-203", name: "Food Sales (by channel)", side: -1, scale: 310000 },
-  { code: "4100", xeroCode: "211-213", name: "Beverage Sales (by channel)", side: -1, scale: 140000 },
-  { code: "5000", xeroCode: "310", name: "Cost of Goods Sold", side: 1, scale: 150000 },
-  { code: "6100", xeroCode: "477", name: "Wages & Salaries", side: 1, scale: 160000 },
-  { code: "6200", xeroCode: "469", name: "Rent", side: 1, scale: 60000 },
-  { code: "6300", xeroCode: "445", name: "Electricity & Gas", side: 1, scale: 18000 },
-]
+/** Typical balance size and sign (debit +, credit −) by NetSuite account type */
+const TB_PROFILE: Record<string, { side: 1 | -1; scale: number }> = {
+  Bank: { side: 1, scale: 60000 },
+  "Accounts Receivable": { side: 1, scale: 30000 },
+  "Other Current Asset": { side: 1, scale: 12000 },
+  "Fixed Asset": { side: 1, scale: 50000 },
+  "Accounts Payable": { side: -1, scale: 40000 },
+  "Other Current Liability": { side: -1, scale: 8000 },
+  Equity: { side: -1, scale: 100000 },
+  Income: { side: -1, scale: 60000 },
+  "Other Income": { side: -1, scale: 4000 },
+  "Cost of Goods Sold": { side: 1, scale: 15000 },
+  Expense: { side: 1, scale: 6000 },
+  "Other Expense": { side: 1, scale: 3000 },
+}
 
-/**
- * `issue` turns on the demo's one visible fix (GST rounding in Mar 2024) for this
- * entity; `roundingApplied` is whether it has been fixed.
- */
-export function trialBalance(
-  subsidiaryId: string,
-  period: string,
-  opts: { roundingApplied?: boolean; issue?: boolean; issuePeriod?: string } = {},
-): TbRow[] {
+const INVENTORY_XERO = new Set(["630"])
+
+export function trialBalance(subsidiaryId: string, period: string): TbRow[] {
   const rnd = seeded(`tb-${subsidiaryId}-${period}`)
   const hasStock = !["1", "4", "6"].includes(subsidiaryId)
-  const rows: TbRow[] = TB_ACCOUNTS.filter((a) => hasStock || !a.inventory).map((a) => {
-    const amount = round2(a.side * a.scale * (0.4 + rnd() * 0.9))
-    return { code: a.code, xeroCode: a.xeroCode, name: a.name, netsuite: amount, xero: amount }
+  const rows: TbRow[] = NETSUITE_CHART.filter((a) => a.code !== "3100" && (hasStock || !INVENTORY_XERO.has(a.xero))).map((a) => {
+    const p = TB_PROFILE[a.type] ?? { side: 1, scale: 5000 }
+    // Accumulated depreciation sits on the credit side
+    const side = a.xero === "716" ? -1 : p.side
+    const amount = round2(side * p.scale * (0.2 + rnd() * 0.9))
+    return { code: a.code, xeroCode: a.xero, name: a.name, netsuite: amount, xero: amount }
   })
   // Plug to retained earnings so the TB balances
   const sum = round2(rows.reduce((s, r) => s + r.netsuite, 0))
-  rows.push({ code: "3100", xeroCode: "960", name: "Retained Earnings", netsuite: -sum, xero: -sum })
+  const re = { code: "3100", xeroCode: "960", name: "Retained Earnings", netsuite: -sum, xero: -sum }
 
   if (subsidiaryId === "5" && FX_RECONCILING_PERIODS.includes(period)) {
     const fx = round2(800 + rnd() * 2400)
-    rows.push({ code: "8160", xeroCode: "498", name: "Unrealised FX (reconciling journal)", netsuite: fx, xero: fx })
-    rows[rows.length - 2].netsuite = round2(rows[rows.length - 2].netsuite - fx)
-    rows[rows.length - 2].xero = rows[rows.length - 2].netsuite
-  }
-
-  if ((opts.issue ?? subsidiaryId === TB_ISSUE.subsidiaryId) && period === (opts.issuePeriod ?? TB_ISSUE.period)) {
-    // NetSuite rounded GST per document and posted the difference to 9999 Rounding.
-    // Xero rounds GST per line, so its GST is 12.40 lower and Rounding is empty
-    // until the tool posts a rounding adjustment to the named account (R-40).
-    const re = rows.find((r) => r.code === "3100")!
-    re.netsuite = round2(re.netsuite - TB_ISSUE.difference)
+    rows.push({ code: "8160", xeroCode: "499", name: "Unrealised FX (reconciling journal)", netsuite: fx, xero: fx })
+    re.netsuite = round2(re.netsuite - fx)
     re.xero = re.netsuite
-    const gst = rows.find((r) => r.xeroCode === TB_ISSUE.account)!
-    const fixed = !!opts.roundingApplied
-    gst.xero = fixed ? gst.netsuite : round2(gst.netsuite + TB_ISSUE.difference)
-    rows.push({
-      code: "9999",
-      xeroCode: "860",
-      name: "Rounding",
-      netsuite: TB_ISSUE.difference,
-      xero: fixed ? TB_ISSUE.difference : 0,
-    })
   }
+  rows.splice(rows.findIndex((r) => r.code > "3100"), 0, re)
   return rows
 }
 
@@ -498,6 +473,42 @@ export function openReturnAuthorisations(subsidiaryId: string) {
   }))
 }
 
+export interface QuoteRow {
+  quoteNumber: string
+  customer: string
+  expires: string
+  amount: number
+}
+
+/** Open NetSuite estimates (quotes) at cutover → Gojee quotes */
+export function openQuotes(subsidiaryId: string): QuoteRow[] {
+  const rnd = seeded(`quotes-${subsidiaryId}`)
+  const customers = receivables(subsidiaryId).map((r) => r.contact)
+  const n = ["1", "4", "6"].includes(subsidiaryId) ? 0 : 4 + Math.floor(rnd() * 5)
+  return Array.from({ length: n }, (_, i) => ({
+    quoteNumber: `EST-${subsidiaryId}${String(2210 + i * 7)}`,
+    customer: customers[(i + 2) % customers.length],
+    expires: `2026-${String(11 + (i % 2)).padStart(2, "0")}-${String(5 + i * 3).padStart(2, "0")}`,
+    amount: round2(900 + rnd() * 14000),
+  }))
+}
+
+/** Files attached to NetSuite transactions and records (full history) */
+export function attachmentCount(subsidiaryId: string): number {
+  const base: Record<string, number> = { "1": 120, "2": 1284, "3": 2310, "4": 410, "5": 980, "6": 60, "7": 760, "8": 1105 }
+  return base[subsidiaryId] ?? 0
+}
+
+export function sampleAttachments() {
+  return [
+    { file: "Bidfood-tax-invoice-88104.pdf", type: "PDF", linkedTo: "Bill BILL-88104", size: "184 KB" },
+    { file: "Crown-catering-order-signed.pdf", type: "PDF", linkedTo: "Invoice INV-35210", size: "1.2 MB" },
+    { file: "Moretti-oven-warranty.pdf", type: "PDF", linkedTo: "Item EQ-OVEN-MORETTI-S100", size: "2.4 MB" },
+    { file: "Lion-delivery-docket-0921.jpg", type: "JPG", linkedTo: "Bill BILL-88109", size: "640 KB" },
+    { file: "Origin-energy-sep-2026.pdf", type: "PDF", linkedTo: "Bill BILL-88114", size: "212 KB" },
+  ]
+}
+
 /** Counts the Gojee loader writes for a subsidiary (R-37) */
 export function gojeeSnapshot(subsidiaryId: string) {
   const inv = inventoryTotals(subsidiaryId)
@@ -512,6 +523,7 @@ export function gojeeSnapshot(subsidiaryId: string) {
     budgetLines: jobBudgets(subsidiaryId).length,
     costRevenueSummaries: jobs.length * 2,
     retentionJobs: jobs.filter((j) => j.retention > 0).length,
+    quotes: openQuotes(subsidiaryId).length,
     purchaseOrders: openPurchaseOrders(subsidiaryId).length,
     timesheetEntries: unbilledTimesheets(subsidiaryId).length,
     allocations: resourceAllocations(subsidiaryId).length,

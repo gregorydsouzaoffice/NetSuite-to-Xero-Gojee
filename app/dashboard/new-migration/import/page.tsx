@@ -16,6 +16,8 @@ import {
   ArrowRight,
   BadgeDollarSign,
   Banknote,
+  FileSignature,
+  Paperclip,
   CalendarDays,
   Copy,
   ListChecks,
@@ -76,11 +78,9 @@ const ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
   jobBudgets: PiggyBank,
   jobCostRevenue: TrendingUp,
   retention: Lock,
+  quotes: FileSignature,
+  attachments: Paperclip,
   purchaseOrders: ClipboardList,
-  timesheets: Clock,
-  schedule: CalendarDays,
-  staff: UserCheck,
-  billingRates: BadgeDollarSign,
 }
 
 // Categories grouped by destination — one hue per system, not a rainbow
@@ -110,6 +110,11 @@ const stallScript: Record<string, { at: number; message: string; resolved: strin
     at: 62,
     message: "Splitting 3 intercompany journals onto loan account 1810…",
     resolved: "Intercompany journals balanced in this org",
+  },
+  Attachments: {
+    at: 38,
+    message: "Large attachment batch — throttling for Xero API limits…",
+    resolved: "Batch accepted — resuming at full speed",
   },
   "Stock on Hand & Serials": {
     at: 40,

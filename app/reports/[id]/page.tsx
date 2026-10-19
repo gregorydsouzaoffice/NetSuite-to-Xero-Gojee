@@ -31,7 +31,7 @@ export default function ComparativeReport({ params }: { params: Promise<{ id: st
   if (!hydrated) return null
 
   const sub = state.netsuite.subsidiaryId
-  const report = buildReport(id as ReportKey, sub, state.roundingFixed, periodFromDate(state.fromDate))
+  const report = buildReport(id as ReportKey, sub, periodFromDate(state.fromDate))
   const ctx = reportContext(sub, state.xero.tenantId)
 
   const download = async (kind: "pdf" | "xlsx") => {

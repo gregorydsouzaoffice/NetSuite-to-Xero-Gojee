@@ -4,6 +4,7 @@
  */
 import { CLIENT_NAME, SUBSIDIARY_BY_ID, XERO_ORG_BY_ID, shortName } from "../demo-data/momento"
 import {
+  FX_RECONCILING_PERIODS,
   inventory,
   inventoryTotals,
   COST_CODES,
@@ -15,7 +16,7 @@ import {
   trialBalance,
 } from "../demo-data/snapshot"
 import { round2 } from "../format"
-import { FIRST_PERIOD, LAST_CLOSED_PERIOD, formatDate, lastDayOfPeriod, periodLabel, periodsInScope, tbIssuePeriod } from "../periods"
+import { FIRST_PERIOD, LAST_CLOSED_PERIOD, formatDate, lastDayOfPeriod, periodLabel, periodsInScope } from "../periods"
 
 export type Cell = string | number
 export interface Column {
@@ -49,9 +50,8 @@ export const REPORT_KEYS: ReportKey[] = ["trial-balance", "aged-receivable", "ag
 
 const sum = (rows: Record<string, Cell>[], key: string) => round2(rows.reduce((s, r) => s + (Number(r[key]) || 0), 0))
 
-function trialBalanceReport(sub: string, roundingFixed: boolean, fromPeriod: string): Report {
-  const issuePeriod = tbIssuePeriod(fromPeriod)
-  const asAt = trialBalance(sub, LAST_CLOSED_PERIOD, { issue: true, roundingApplied: roundingFixed, issuePeriod })
+function trialBalanceReport(sub: string, fromPeriod: string): Report {
+  const asAt = trialBalance(sub, LAST_CLOSED_PERIOD)
   const accountRows = asAt.map((r) => ({
     account: `${r.code} ${r.name}`,
     xeroAccount: r.xeroCode,
@@ -60,7 +60,7 @@ function trialBalanceReport(sub: string, roundingFixed: boolean, fromPeriod: str
     diff: round2(r.xero - r.netsuite),
   }))
   const periods = periodsInScope(fromPeriod).map((p) => {
-    const tb = trialBalance(sub, p, { issue: true, roundingApplied: roundingFixed, issuePeriod })
+    const tb = trialBalance(sub, p)
     const debit = (k: "netsuite" | "xero") => round2(tb.filter((r) => r[k] > 0).reduce((s, r) => s + r[k], 0))
     const diff = tbDifference(tb)
     return {
@@ -68,7 +68,7 @@ function trialBalanceReport(sub: string, roundingFixed: boolean, fromPeriod: str
       netsuite: debit("netsuite"),
       xero: debit("xero"),
       diff,
-      note: p === issuePeriod && roundingFixed ? "GST rounding posted to 860 Rounding" : "",
+      note: sub === "5" && FX_RECONCILING_PERIODS.includes(p) ? "FX reconciling journal" : "",
     }
   })
   const failing = periods.filter((p) => p.diff !== 0)
@@ -83,7 +83,7 @@ function trialBalanceReport(sub: string, roundingFixed: boolean, fromPeriod: str
     headline: failing.length === 0 ? `All ${periods.length} periods match NetSuite to the cent.` : `${failing.length} period(s) differ.`,
     tables: [
       {
-        title: `Trial balance as at ${formatDate(lastDayOfPeriod(LAST_CLOSED_PERIOD))}`,
+        title: `Trial balance as at ${formatDate(lastDayOfPeriod(LAST_CLOSED_PERIOD))} — all ${asAt.length} accounts`,
         columns: [
           { key: "account", label: "Account" },
           { key: "xeroAccount", label: "Xero account" },
@@ -255,15 +255,15 @@ function jobsReport(sub: string): Report {
     ],
     notes: [
       "Cost and revenue to date are summaries in Gojee; the line detail links to the Xero bills and invoices.",
-      "Unbilled timesheets went to Gojee only — nothing was sent to Xero payroll. No WIP journal was posted in Xero.",
+      "Open quotes went to Gojee as quotes. No WIP journal was posted in Xero.",
     ],
   }
 }
 
-export function buildReport(key: ReportKey, sub: string, roundingFixed = true, fromPeriod: string = FIRST_PERIOD): Report {
+export function buildReport(key: ReportKey, sub: string, fromPeriod: string = FIRST_PERIOD): Report {
   switch (key) {
     case "trial-balance":
-      return trialBalanceReport(sub, roundingFixed, fromPeriod)
+      return trialBalanceReport(sub, fromPeriod)
     case "aged-receivable":
     case "aged-payable":
       return agedReport(sub, key)

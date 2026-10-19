@@ -4,6 +4,7 @@
  * All screens and reports read from here so figures agree everywhere.
  */
 import type { NsTypeCode } from "../mapping/transaction-types"
+import { CHART_SIZE } from "./chart"
 import type { SourceJournal } from "../mapping/intercompany"
 import type { GojeeAccount, SegmentTarget, Subsidiary, XeroIdentity, XeroOrg } from "../types"
 
@@ -140,14 +141,14 @@ export const FOREIGN_CURRENCY: Record<string, { currency: string; count: number 
 }
 
 export const MASTER_COUNTS: Record<string, { accounts: number; customers: number; vendors: number; items: number }> = {
-  "1": { accounts: 46, customers: 4, vendors: 31, items: 0 },
-  "2": { accounts: 46, customers: 312, vendors: 148, items: 96 },
-  "3": { accounts: 46, customers: 488, vendors: 236, items: 154 },
-  "4": { accounts: 46, customers: 22, vendors: 117, items: 0 },
-  "5": { accounts: 46, customers: 406, vendors: 89, items: 61 },
-  "6": { accounts: 46, customers: 2, vendors: 12, items: 0 },
-  "7": { accounts: 46, customers: 264, vendors: 102, items: 48 },
-  "8": { accounts: 46, customers: 371, vendors: 163, items: 88 },
+  "1": { accounts: CHART_SIZE, customers: 4, vendors: 31, items: 0 },
+  "2": { accounts: CHART_SIZE, customers: 312, vendors: 148, items: 96 },
+  "3": { accounts: CHART_SIZE, customers: 488, vendors: 236, items: 154 },
+  "4": { accounts: CHART_SIZE, customers: 22, vendors: 117, items: 0 },
+  "5": { accounts: CHART_SIZE, customers: 406, vendors: 89, items: 61 },
+  "6": { accounts: CHART_SIZE, customers: 2, vendors: 12, items: 0 },
+  "7": { accounts: CHART_SIZE, customers: 264, vendors: 102, items: 48 },
+  "8": { accounts: CHART_SIZE, customers: 371, vendors: 163, items: 88 },
 }
 
 // ---------------------------------------------------------------------------

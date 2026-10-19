@@ -2,21 +2,21 @@
  * The categories one entity migrates, with counts. Extract, Map, Validate,
  * Import and the Report all read from here so the numbers agree everywhere.
  */
+import { CHART_SIZE, NETSUITE_CHART, XERO_TARGET_BY_CODE } from "./chart"
 import { CONTACTS, ITEMS, MASTER_COUNTS, recordCounts } from "./momento"
 import { FIRST_PERIOD, historyShare } from "../periods"
 import {
   COST_CODES,
   JOB_TEMPLATES,
-  billingRates,
   gojeeSnapshot,
   inventory,
   jobBudgets,
   jobTasks,
   openJobs,
   openPurchaseOrders,
-  resourceAllocations,
-  staff,
-  unbilledTimesheets,
+  attachmentCount,
+  openQuotes,
+  sampleAttachments,
 } from "./snapshot"
 
 export type CategorySystem = "xero" | "gojee"
@@ -67,6 +67,14 @@ export function categories(subsidiaryId: string, fromPeriod: string = FIRST_PERI
       source: "InvAdjst, ItemRcpt, ItemShip",
       becomes: "Manual journals (COGS, inventory, accruals)",
     },
+    {
+      key: "attachments",
+      label: "Attachments",
+      system: "xero",
+      count: Math.round(attachmentCount(subsidiaryId) * share),
+      source: "File Cabinet · files on transactions",
+      becomes: "Xero attachments on invoices, bills and contacts",
+    },
     { key: "stock", label: "Stock on Hand & Serials", system: "gojee", count: g.items + g.serials, source: "record/v1/inventoryItem (on hand)", becomes: "Gojee inventory" },
     { key: "jobs", label: "Jobs & WIP", system: "gojee", count: g.jobs, source: "record/v1/job", becomes: "Gojee jobs (status, dates, PM); WIP = cost − billed" },
     { key: "jobTasks", label: "Job Tasks & Stages", system: "gojee", count: g.tasks, source: "record/v1/projectTask", becomes: "Gojee job stages" },
@@ -81,11 +89,8 @@ export function categories(subsidiaryId: string, fromPeriod: string = FIRST_PERI
       becomes: "Summaries by cost code, linked to Xero bills & invoices",
     },
     { key: "retention", label: "Retention Held", system: "gojee", count: g.retentionJobs, source: "SuiteQL · custom field / invoice line", becomes: "Retention on Gojee jobs" },
+    { key: "quotes", label: "Open Quotes", system: "gojee", count: g.quotes, source: "SuiteQL · Estimate (open)", becomes: "Gojee quotes" },
     { key: "purchaseOrders", label: "Open Purchase Orders", system: "gojee", count: g.purchaseOrders, source: "SuiteQL · PurchOrd (open)", becomes: "Gojee purchase orders" },
-    { key: "timesheets", label: "Timesheets (unbilled)", system: "gojee", count: g.timesheetEntries, source: "record/v1/timeBill (billed = false)", becomes: "Gojee timesheets" },
-    { key: "schedule", label: "Staff Schedule", system: "gojee", count: g.allocations, source: "record/v1/resourceAllocation", becomes: "Gojee schedule (future bookings)" },
-    { key: "staff", label: "Staff (link only)", system: "gojee", count: g.staff, source: "record/v1/employee", becomes: "Linked to staff synced from Xero payroll" },
-    { key: "billingRates", label: "Billing Rates", system: "gojee", count: g.billingRates, source: "SuiteQL · charge rules, labor cost", becomes: "Staff cost & charge rates" },
   ]
 }
 
@@ -107,15 +112,13 @@ export function sampleRows(subsidiaryId: string): Record<string, { title: string
   const amt = (n: number) => `$${n.toLocaleString("en-AU", { minimumFractionDigits: 2 })}`
   return {
     accounts: {
-      title: "Chart of Accounts",
+      title: `Chart of Accounts — sample of ${CHART_SIZE} accounts`,
       headers: ["NetSuite", "Xero Account", "Type", "Status"],
-      rows: [
-        ["4000 Food Sales", "201 / 202 / 203 Sales by channel", "Revenue", "Imported"],
-        ["1100 Accounts Receivable", "610 Accounts Receivable", "Current Asset", "Imported"],
-        ["1300 Inventory Asset", "630 Inventory", "Inventory", "Imported"],
-        ["1350 Work in Progress", "640 Work in Progress", "Current Asset", "Imported"],
-        ["9999 Rounding", "860 Rounding", "Current Liability", "Imported"],
-      ],
+      rows: ["4001", "4020", "1300", "1350", "6100", "2900"].map((code) => {
+        const a = NETSUITE_CHART.find((x) => x.code === code)!
+        const t = XERO_TARGET_BY_CODE[a.xero]
+        return [`${a.code} ${a.name}`, `${t.code} ${t.name}`, t.type, "Imported"]
+      }),
     },
     customers: {
       title: "Customers",
@@ -234,36 +237,22 @@ export function sampleRows(subsidiaryId: string): Record<string, { title: string
         .filter((j) => j.retention > 0)
         .map((j) => [`${j.jobId} ${j.name}`, amt(j.billedToDate), amt(j.retention), "Imported"]),
     },
+    quotes: {
+      title: "Open Quotes (Gojee)",
+      headers: ["Quote #", "Customer", "Expires", "Amount", "Status"],
+      rows: openQuotes(subsidiaryId).map((q) => [q.quoteNumber, q.customer, q.expires.split("-").reverse().join("/"), amt(q.amount), "Imported"]),
+    },
+    attachments: {
+      title: "Attachments (Xero)",
+      headers: ["File", "Type", "Attached To", "Size", "Status"],
+      rows: sampleAttachments().map((a) => [a.file, a.type, a.linkedTo, a.size, "Imported"]),
+    },
     purchaseOrders: {
       title: "Open Purchase Orders (Gojee)",
       headers: ["PO #", "Supplier", "Amount", "Status"],
       rows: openPurchaseOrders(subsidiaryId)
         .slice(0, 5)
         .map((p) => [p.poNumber, p.vendor, amt(p.amount), "Imported"]),
-    },
-    timesheets: {
-      title: "Timesheets — unbilled (Gojee)",
-      headers: ["Employee", "Job", "Task", "Hours", "Billable", "Status"],
-      rows: unbilledTimesheets(subsidiaryId)
-        .slice(0, 8)
-        .map((t) => [t.employee, t.jobId, t.task, String(t.hours), t.billable ? "Yes" : "No", "Imported"]),
-    },
-    schedule: {
-      title: "Staff Schedule (Gojee)",
-      headers: ["Employee", "Job", "From", "To", "Hours", "Status"],
-      rows: resourceAllocations(subsidiaryId)
-        .slice(0, 8)
-        .map((a) => [a.employee, a.jobId, a.startDate.split("-").reverse().join("/"), a.endDate.split("-").reverse().join("/"), String(a.allocatedHours), "Imported"]),
-    },
-    staff: {
-      title: "Staff — link only (Gojee)",
-      headers: ["Employee", "Role", "Xero Payroll", "Status"],
-      rows: staff(subsidiaryId).map((p) => [`${p.employeeId} ${p.name}`, p.role, p.xeroPayroll, "Imported"]),
-    },
-    billingRates: {
-      title: "Billing Rates (Gojee)",
-      headers: ["Role", "NetSuite Rule", "Cost / Charge", "Fit", "Status"],
-      rows: billingRates().map((r) => [r.role, r.netsuiteRule, `$${r.costRate} / $${r.chargeRate}`, r.fit, "Imported"]),
     },
   }
 }

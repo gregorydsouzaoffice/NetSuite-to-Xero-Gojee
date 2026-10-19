@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
+import { NETSUITE_CHART, XERO_TARGETS } from "@/lib/demo-data/chart"
 import MigrationStepper from "@/components/migration-stepper"
 import NextButton from "@/components/next-button"
 import { Button } from "@/components/ui/button"
@@ -15,6 +16,7 @@ import {
   ChevronDown,
   BadgeDollarSign,
   Banknote,
+  FileSignature,
   CalendarDays,
   Copy,
   ListChecks,
@@ -95,27 +97,8 @@ interface TargetAccount {
 }
 
 // Target Xero chart of accounts available for remapping
-const TARGET_ACCOUNTS: TargetAccount[] = [
-  { code: "090", name: "CBA Operating Account", type: "Asset", tax: "BAS Excluded" },
-  { code: "095", name: "Undeposited Funds Clearing", type: "Asset", tax: "BAS Excluded" },
-  { code: "610", name: "Accounts Receivable", type: "Asset", tax: "BAS Excluded" },
-  { code: "630", name: "Inventory", type: "Asset", tax: "BAS Excluded" },
-  { code: "640", name: "Work in Progress", type: "Asset", tax: "BAS Excluded" },
-  { code: "800", name: "Accounts Payable", type: "Liability", tax: "BAS Excluded" },
-  { code: "820", name: "GST", type: "Liability", tax: "BAS Excluded" },
-  { code: "835", name: "Gift Vouchers Liability", type: "Liability", tax: "BAS Excluded" },
-  { code: "860", name: "Rounding", type: "Liability", tax: "BAS Excluded" },
-  { code: "960", name: "Retained Earnings", type: "Equity", tax: "BAS Excluded" },
-  { code: "201", name: "Sales – Dine-in", type: "Income", tax: "GST on Income" },
-  { code: "202", name: "Sales – Delivery", type: "Income", tax: "GST on Income" },
-  { code: "203", name: "Sales – Catering", type: "Income", tax: "GST on Income" },
-  { code: "260", name: "Other Revenue", type: "Income", tax: "GST on Income" },
-  { code: "310", name: "Cost of Goods Sold", type: "Cost of Sales", tax: "GST on Expenses" },
-  { code: "406", name: "Delivery Platform Commission", type: "Expense", tax: "GST on Expenses" },
-  { code: "429", name: "General Expenses", type: "Expense", tax: "GST on Expenses" },
-  { code: "469", name: "Rent", type: "Expense", tax: "GST on Expenses" },
-  { code: "477", name: "Wages and Salaries", type: "Expense", tax: "BAS Excluded" },
-]
+// Target Xero chart of accounts available for remapping
+const TARGET_ACCOUNTS: TargetAccount[] = XERO_TARGETS
 
 const ACCOUNT_TYPE_ORDER = ["Asset", "Liability", "Equity", "Income", "Cost of Sales", "Expense"]
 
@@ -129,18 +112,13 @@ const accountOptions = (codes?: string[]): RuleOption[] =>
   }))
 
 // Sample NetSuite accounts with their suggested Xero targets (record-level remapping)
-const SOURCE_ACCOUNTS: { code: string; name: string; type: string; suggested: string; needsReview?: boolean }[] = [
-  { code: "1000", name: "CBA Operating Account", type: "Bank", suggested: "090" },
-  { code: "1050", name: "Undeposited Funds", type: "Other Current Asset", suggested: "095" },
-  { code: "1100", name: "Accounts Receivable", type: "Accounts Receivable", suggested: "610" },
-  { code: "1300", name: "Inventory Asset", type: "Other Current Asset", suggested: "630" },
-  { code: "1350", name: "Work in Progress", type: "Other Current Asset", suggested: "640" },
-  { code: "2450", name: "Gift Vouchers Liability", type: "Other Current Liability", suggested: "835" },
-  { code: "4000·DI", name: "Food Sales – Dine-in channel", type: "Income", suggested: "201" },
-  { code: "4000·DL", name: "Food Sales – Delivery channel", type: "Income", suggested: "202" },
-  { code: "6600", name: "Delivery Platform Fees", type: "Expense", suggested: "406" },
-  { code: "9999", name: "Rounding", type: "Other Expense", suggested: "860" },
-]
+// Momento's full NetSuite chart (159 accounts) with suggested Xero targets
+const SOURCE_ACCOUNTS: { code: string; name: string; type: string; suggested: string; needsReview?: boolean }[] = NETSUITE_CHART.map((a) => ({
+  code: a.code,
+  name: a.name,
+  type: a.type,
+  suggested: a.xero,
+}))
 
 type Dest = "xero" | "gojee"
 
@@ -375,6 +353,21 @@ const CATEGORIES: CategoryDef[] = [
     rules: [keep("Opening stock", "Inventory balance at cutover", "Arrives through the history (no extra journal)", "Post an opening balance")],
   },
   {
+    key: "attachments",
+    label: "Attachments",
+    dest: "xero",
+    fields: [
+      f("file", "File Name", "File Name", []),
+      f("type", "File Type", "Mime Type", []),
+      f("linked", "Attached To (transaction / record)", "Xero Invoice, Bill or Contact", []),
+      f("size", "File Size", "File Size", []),
+    ],
+    rules: [
+      keep("Files over 25 MB", "Xero's per-file attachment limit", "Compress and upload", "Skip large files"),
+      keep("Unsupported formats", "File types Xero can't store", "Convert to PDF", "Skip unsupported files"),
+    ],
+  },
+  {
     key: "gojee-stock",
     label: "Stock & Serials",
     dest: "gojee",
@@ -485,54 +478,17 @@ const CATEGORIES: CategoryDef[] = [
     rules: [keep("Sending to Xero", "Gojee passes purchase orders on to Xero", "Gojee sends them after cutover", "Don't send")],
   },
   {
-    key: "gojee-timesheets",
-    label: "Timesheets (unbilled)",
+    key: "gojee-quotes",
+    label: "Open Quotes",
     dest: "gojee",
     fields: [
-      f("employee", "Employee", "Staff Member", []),
-      f("job", "Project", "Job", []),
-      f("task", "Project Task", "Job Stage", []),
-      f("hours", "Hours", "Hours", []),
-      f("date", "Date", "Date", []),
-      f("billable", "Billable", "Billable", []),
+      f("number", "Estimate #", "Quote Number", []),
+      f("customer", "Customer", "Client", []),
+      f("expiry", "Expiration Date", "Valid Until", []),
+      f("lines", "Item Lines", "Quote Lines", []),
+      f("total", "Total", "Quote Total", []),
     ],
-    rules: [
-      keep("Which entries", "timeBill records on open jobs", "Unbilled only (billed = false)", "All time entries"),
-      keep("Payroll", "Time entries on open jobs", "Gojee only — not Xero payroll", "Also send to Xero payroll"),
-    ],
-  },
-  {
-    key: "gojee-schedule",
-    label: "Staff Schedule",
-    dest: "gojee",
-    fields: [
-      f("employee", "Employee", "Staff Member", []),
-      f("job", "Project", "Job", []),
-      f("dates", "Start / End Date", "Booking Dates", []),
-      f("hours", "Allocated Hours", "Scheduled Hours", []),
-    ],
-    rules: [keep("Past allocations", "Resource allocations before cutover", "Future bookings only", "Import all allocations")],
-  },
-  {
-    key: "gojee-staff",
-    label: "Staff",
-    dest: "gojee",
-    fields: [
-      f("employee", "Employee", "Staff Member (from Xero payroll)", []),
-      f("email", "Email", "Match key", ["Employee ID"]),
-    ],
-    rules: [keep("Staff master", "Staff come from Xero payroll via the Gojee sync", "Link only — don't create staff", "Create staff in Gojee")],
-  },
-  {
-    key: "gojee-rates",
-    label: "Billing Rates",
-    dest: "gojee",
-    fields: [
-      f("labor", "Labor cost on employee", "Staff Cost Rate", []),
-      f("charge", "Project billing / charge rules", "Charge Rate", []),
-      f("tiers", "Tiered / weekend uplift rules", "Separate charge rate", ["Ignore"]),
-    ],
-    rules: [keep("Complex charge rules", "Partial fit: NetSuite rate logic is richer than Gojee", "Simplify to a charge rate per role", "Skip complex rules")],
+    rules: [keep("Expired quotes", "Estimates past their expiry date at cutover", "Skip expired quotes", "Import as expired quotes")],
   },
 ]
 
@@ -618,11 +574,9 @@ const CATEGORY_ICONS: Record<string, React.ComponentType<{ className?: string }>
   "gojee-budgets": PiggyBank,
   "gojee-cost": TrendingUp,
   "gojee-retention": Lock,
-  "gojee-schedule": CalendarDays,
-  "gojee-staff": UserCheck,
-  "gojee-rates": BadgeDollarSign,
   "gojee-pos": ClipboardList,
-  "gojee-timesheets": Clock,
+  "gojee-quotes": FileSignature,
+  attachments: Paperclip,
 }
 
 /* ------------------------------------------------------------------------- */
@@ -984,13 +938,16 @@ export default function MapData() {
                         <h3 className="mb-1 text-base font-semibold flex items-center text-foreground">
                           <Database className="mr-2.5 h-5 w-5 text-primary" />
                           Account Remapping
+                          <span className="ml-auto rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-bold text-primary">
+                            {SOURCE_ACCOUNTS.length} accounts
+                          </span>
                         </h3>
                         <p className="mb-6 text-xs text-muted-foreground">
                           Choose the Xero account each NetSuite account will migrate into — the treatment below updates
                           with your selection
                         </p>
-                        <div className="space-y-1">
-                          <div className="grid grid-cols-12 gap-3 border-b border-border/30 pb-3 font-semibold text-xs uppercase tracking-wider text-muted-foreground">
+                        <div className="max-h-[560px] space-y-1 overflow-y-auto rounded-xl pr-1 [scrollbar-gutter:stable]">
+                          <div className="sticky top-0 z-10 grid grid-cols-12 gap-3 border-b border-border/30 bg-card/95 pb-3 pt-1 font-semibold text-xs uppercase tracking-wider text-muted-foreground backdrop-blur">
                             <div className="col-span-4">NetSuite Account</div>
                             <div className="col-span-1"></div>
                             <div className="col-span-5">Xero Account</div>
@@ -1013,7 +970,7 @@ export default function MapData() {
                                       ? "bg-amber-500/10 ring-1 ring-amber-500/40"
                                       : ""
                                 }`}
-                                style={{ animationDelay: `${index * 50}ms`, animationFillMode: "both" }}
+                                style={{ animationDelay: `${Math.min(index, 12) * 50}ms`, animationFillMode: "both" }}
                               >
                                 <div className="grid grid-cols-12 items-center gap-3 text-sm">
                                   <div className="col-span-4 flex items-center gap-2.5 min-w-0">

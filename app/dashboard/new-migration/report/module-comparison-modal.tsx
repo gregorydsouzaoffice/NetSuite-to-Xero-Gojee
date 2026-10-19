@@ -169,7 +169,6 @@ const modules: { id: string; name: string; description: string; left: Side; righ
         ["Project tasks", TASKS.map((t) => t.name).join(", ")],
         ["Cost to date", money(JOB.costToDate)],
         ["Billed to date", money(JOB.billedToDate)],
-        ["Unbilled time", `${JOB.timesheetHours} hours`],
       ],
     },
     right: {

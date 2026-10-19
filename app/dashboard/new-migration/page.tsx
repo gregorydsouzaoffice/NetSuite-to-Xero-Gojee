@@ -25,7 +25,7 @@ const destinationPlatforms = [
   {
     id: "gojee",
     name: "Gojee",
-    description: "Open jobs, stock, POs and timesheets at cutover",
+    description: "Open jobs, quotes, stock and POs at cutover",
     logo: "/images/gojee/gojee-tile.png",
   },
 ]

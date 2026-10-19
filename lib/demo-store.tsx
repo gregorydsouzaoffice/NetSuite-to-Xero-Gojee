@@ -13,8 +13,6 @@ export interface DemoState {
   netsuite: { connected: boolean; accountId: string; role: string; subsidiaryId: string }
   xero: { connected: boolean; tenantId: string }
   gojee: { connected: boolean }
-  /** Validate step: the trial-balance rounding difference has been fixed */
-  roundingFixed: boolean
   /** First day of history to migrate (ISO date). Default = everything in NetSuite. */
   fromDate: string
 }
@@ -26,7 +24,6 @@ export function initialDemoState(): DemoState {
     netsuite: { connected: false, accountId: NETSUITE_ACCOUNT.accountId, role: "Administrator", subsidiaryId: "2" },
     xero: { connected: false, tenantId: "xt-hillys" },
     gojee: { connected: false },
-    roundingFixed: false,
     fromDate: FIRST_DATE,
   }
 }

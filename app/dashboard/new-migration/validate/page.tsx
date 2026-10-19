@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { AlertTriangle, ArrowLeft, CheckCircle, CheckSquare, Loader2, Shield, Wrench, XCircle } from "lucide-react"
+import { AlertTriangle, ArrowLeft, CheckCircle, CheckSquare, Shield, XCircle } from "lucide-react"
 import DestinationBadge from "@/components/destination-badge"
 import MigrationStepper from "@/components/migration-stepper"
 import NextButton from "@/components/next-button"
@@ -12,10 +12,8 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Progress } from "@/components/ui/progress"
 import { categories } from "@/lib/demo-data/migration"
 import { SUBSIDIARY_BY_ID } from "@/lib/demo-data/momento"
-import { TB_ISSUE, trialBalance } from "@/lib/demo-data/snapshot"
 import { useDemo } from "@/lib/demo-store"
-import { fmtMoney } from "@/lib/format"
-import { periodFromDate, periodLabel, tbIssuePeriod } from "@/lib/periods"
+import { periodFromDate } from "@/lib/periods"
 
 /** Warnings that don't block the migration (shown like the original Validate step) */
 const WARNINGS: Record<string, { count: number; message: string }> = {
@@ -24,7 +22,7 @@ const WARNINGS: Record<string, { count: number; message: string }> = {
   journals: { count: 1, message: "Journal JE-HIL-2211 has a line in another subsidiary; it will be balanced on the intercompany loan account 1810-MHG." },
   jobs: { count: 1, message: "1 open sales order will be created as a Gojee job (setting on the Map step). WIP is calculated as cost to date − billed to date." },
   jobTemplates: { count: 1, message: "Job templates are a partial fit — they import only if Gojee supports templates (to be confirmed with Gojee)." },
-  billingRates: { count: 2, message: "2 NetSuite charge rules (weekend uplift, fixed-fee milestones) are simplified to a charge rate per role in Gojee." },
+  attachments: { count: 3, message: "3 attachments are over Xero's 25 MB limit and will be compressed before upload." },
 }
 
 export default function ValidateData() {
@@ -32,11 +30,8 @@ export default function ValidateData() {
   const { state, update } = useDemo()
   const subId = state.netsuite.subsidiaryId
   const fromPeriod = periodFromDate(state.fromDate)
-  const issuePeriod = tbIssuePeriod(fromPeriod)
-  const fixed = state.roundingFixed
   const [validationComplete, setValidationComplete] = useState(false)
   const [validationProgress, setValidationProgress] = useState(0)
-  const [fixing, setFixing] = useState(false)
 
   useEffect(() => {
     // Fast start, jittery decelerating tail — like real record-by-record checks
@@ -57,12 +52,11 @@ export default function ValidateData() {
 
   const validationResults = categories(subId, fromPeriod).map((c) => {
     const w = WARNINGS[c.key]?.count ?? 0
-    const tbError = c.key === "journals" && !fixed
     return {
       ...c,
       valid: c.count,
       warnings: w,
-      status: tbError ? "error" : w > 0 ? "warning" : "success",
+      status: w > 0 ? "warning" : "success",
     }
   })
   const validationWarnings = Object.entries(WARNINGS).map(([key, w], id) => ({
@@ -70,16 +64,6 @@ export default function ValidateData() {
     category: validationResults.find((r) => r.key === key)?.label ?? key,
     message: w.message,
   }))
-
-  const tbRows = trialBalance(subId, issuePeriod, { issue: true, roundingApplied: fixed, issuePeriod }).filter((r) => r.xeroCode === "820" || r.xeroCode === "860")
-
-  const applyFix = () => {
-    setFixing(true)
-    setTimeout(() => {
-      update((s) => ({ ...s, roundingFixed: true }))
-      setFixing(false)
-    }, 1200)
-  }
 
   return (
     <div className="flex min-h-screen flex-col bg-gradient-to-br from-background via-background to-muted/20">
@@ -112,7 +96,7 @@ export default function ValidateData() {
                 Step 4: Validate Data
               </CardTitle>
               <CardDescription className="text-muted-foreground mt-1">
-                {SUBSIDIARY_BY_ID[subId]?.name}: records checked and trial balance compared with NetSuite, period by period
+                {SUBSIDIARY_BY_ID[subId]?.name}: every record checked and the trial balance compared with NetSuite, period by period
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6 pt-2">
@@ -143,66 +127,6 @@ export default function ValidateData() {
                 </div>
               ) : (
                 <div className="animate-fade-in-up space-y-6">
-                  {/* The one issue that needs fixing */}
-                  {!fixed ? (
-                    <div className="rounded-2xl border border-red-500/25 bg-red-500/5 backdrop-blur-md p-6">
-                      <div className="flex items-start gap-4">
-                        <div className="h-10 w-10 rounded-xl bg-red-500/10 flex items-center justify-center flex-shrink-0">
-                          <XCircle className="h-5 w-5 text-red-600" />
-                        </div>
-                        <div className="flex-1">
-                          <h3 className="text-base font-semibold text-red-700">
-                            Trial balance differs by ${TB_ISSUE.difference.toFixed(2)} in {periodLabel(issuePeriod)}
-                          </h3>
-                          <p className="text-sm text-red-700/80 mt-1 leading-relaxed">
-                            NetSuite rounded GST per document and posted the difference to its Rounding account. Xero rounds GST per line, so the two
-                            don&apos;t match yet.
-                          </p>
-                          <table className="mt-4 w-full max-w-lg text-sm">
-                            <thead>
-                              <tr className="text-left text-xs uppercase tracking-wider text-muted-foreground">
-                                <th className="py-1.5 font-semibold">Account</th>
-                                <th className="py-1.5 text-right font-semibold">NetSuite</th>
-                                <th className="py-1.5 text-right font-semibold">Xero</th>
-                                <th className="py-1.5 text-right font-semibold">Diff</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {tbRows.map((r) => (
-                                <tr key={r.code} className="border-t border-red-500/10">
-                                  <td className="py-1.5">
-                                    {r.xeroCode} {r.name}
-                                  </td>
-                                  <td className="py-1.5 text-right tabular-nums">{fmtMoney(r.netsuite)}</td>
-                                  <td className="py-1.5 text-right tabular-nums">{fmtMoney(r.xero)}</td>
-                                  <td className="py-1.5 text-right font-semibold tabular-nums text-red-600">{fmtMoney(r.xero - r.netsuite)}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                          <Button onClick={applyFix} disabled={fixing} className="google-button-primary mt-5">
-                            {fixing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Wrench className="mr-2 h-4 w-4" />}
-                            {fixing ? "Posting and re-checking…" : `Fix: post $${TB_ISSUE.difference.toFixed(2)} to Rounding (860)`}
-                          </Button>
-                        </div>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="animate-fade-in-up rounded-2xl border border-green-500/20 bg-green-500/5 backdrop-blur-md p-5">
-                      <div className="flex items-start gap-4">
-                        <div className="h-10 w-10 rounded-xl bg-green-500/10 flex items-center justify-center flex-shrink-0">
-                          <CheckCircle className="h-5 w-5 text-green-600" />
-                        </div>
-                        <div>
-                          <h3 className="text-base font-semibold text-green-800">Fixed — {periodLabel(issuePeriod)} re-checked: difference 0.00</h3>
-                          <p className="text-sm text-green-800/80 mt-1">
-                            ${TB_ISSUE.difference.toFixed(2)} rounding adjustment posted to the named Rounding account (860). Every period now matches NetSuite.
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
                   <div className="rounded-2xl border border-border/40 bg-card/50 backdrop-blur-md p-6">
                     <h3 className="mb-4 text-base font-semibold flex items-center text-foreground">
                       <Shield className="mr-2.5 h-5 w-5 text-primary" />
@@ -245,7 +169,7 @@ export default function ValidateData() {
                             ) : (
                               <div className="flex items-center justify-end text-red-600 font-medium text-xs">
                                 <XCircle className="h-4 w-4 mr-1 text-red-500" />
-                                TB difference
+                                Errors
                               </div>
                             )}
                           </div>
@@ -275,7 +199,7 @@ export default function ValidateData() {
                     <div className="mt-4 text-xs text-amber-800/70 font-medium">* These warnings won&apos;t prevent migration, but you may want to review them.</div>
                   </div>
 
-                  {fixed && (
+                  {(
                     <div className="animate-fade-in-up rounded-2xl border border-green-500/20 bg-green-500/5 backdrop-blur-md p-6">
                       <div className="flex items-start gap-4">
                         <div className="h-10 w-10 rounded-xl bg-green-500/10 flex items-center justify-center flex-shrink-0">
@@ -304,7 +228,7 @@ export default function ValidateData() {
               >
                 <ArrowLeft className="mr-2 h-4 w-4" /> Back
               </Button>
-              <NextButton to="Import" onClick={() => router.push("/dashboard/new-migration/import")} disabled={!validationComplete || !fixed} />
+              <NextButton to="Import" onClick={() => router.push("/dashboard/new-migration/import")} disabled={!validationComplete} />
             </CardFooter>
           </Card>
         </div>

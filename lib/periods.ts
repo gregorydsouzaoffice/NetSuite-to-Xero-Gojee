@@ -25,13 +25,6 @@ export function historyShare(fromPeriod: string): number {
   return periodsInScope(fromPeriod).length / periodRange(FIRST_PERIOD, LAST_CLOSED_PERIOD).length
 }
 
-/** The demo's one trial-balance problem lands in Mar 2024, or the first March in scope, or the first period */
-export function tbIssuePeriod(fromPeriod: string): string {
-  const periods = periodsInScope(fromPeriod)
-  if (periods.includes("2024-03")) return "2024-03"
-  return periods.find((p) => p.endsWith("-03")) ?? periods[0]
-}
-
 export function periodRange(from: string, to: string): string[] {
   const out: string[] = []
   let [y, m] = from.split("-").map(Number)

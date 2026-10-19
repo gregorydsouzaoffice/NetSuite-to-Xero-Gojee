@@ -27,7 +27,7 @@ export default function HistoryRange({ totalRecords }: { totalRecords: number })
   const from = state.fromDate
   const periods = periodsInScope(periodFromDate(from)).length
   const isPreset = PRESETS.some((p) => p.date === from)
-  const set = (date: string) => update((s) => ({ ...s, fromDate: date, roundingFixed: false }))
+  const set = (date: string) => update((s) => ({ ...s, fromDate: date }))
 
   const counterFrom = prev.current
   prev.current = totalRecords

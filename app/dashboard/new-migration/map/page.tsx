@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { NETSUITE_CHART, XERO_TARGETS } from "@/lib/demo-data/chart"
+import AttachmentPlan from "@/components/attachment-plan"
 import MigrationStepper from "@/components/migration-stepper"
 import NextButton from "@/components/next-button"
 import { Button } from "@/components/ui/button"
@@ -358,13 +359,18 @@ const CATEGORIES: CategoryDef[] = [
     dest: "xero",
     fields: [
       f("file", "File Name", "File Name", []),
-      f("type", "File Type", "Mime Type", []),
-      f("linked", "Attached To (transaction / record)", "Xero Invoice, Bill or Contact", []),
+      f("format", "File Format", "Mime Type", []),
       f("size", "File Size", "File Size", []),
+      f("record", "NetSuite Record Type + Internal ID", "Destination Record (manifest)", []),
+      f("linked", "Attached To (transaction / contact)", "Xero Invoice, Bill, Credit Note, Contact or Bank Transaction", ["Xero Files folder"]),
+      f("unlinked", "Unlinked File Cabinet documents", "Xero Files folder", ["External storage"]),
     ],
     rules: [
-      keep("Files over 25 MB", "Xero's per-file attachment limit", "Compress and upload", "Skip large files"),
-      keep("Unsupported formats", "File types Xero can't store", "Convert to PDF", "Skip unsupported files"),
+      keep("Unsupported formats", "ZIP, DWG, PSD, MP4 — Xero can't store them on a record", "Keep in external storage, link from the Xero record", "Skip and list in the manifest"),
+      keep("Files over 25 MB", "Xero's per-file attachment limit", "Compress PDFs; others to external storage", "Skip and list in the manifest"),
+      keep("HEIC photos", "iPhone photo format", "Convert to JPG and attach", "Keep in external storage"),
+      keep("More than 10 files on one record", "Xero's per-record attachment limit", "Overflow to Xero Files, linked by reference", "Attach the newest 10 only"),
+      keep("Payment proofs", "Xero payments can't hold files", "Attach to the invoice or bill that was paid", "Store in Xero Files"),
     ],
   },
   {
@@ -1048,6 +1054,8 @@ export default function MapData() {
                         </div>
                       </div>
                     )}
+
+                    {cat.key === "attachments" && <AttachmentPlan />}
 
                     {/* Treatment rules */}
                     <div

@@ -65,7 +65,7 @@ export default function ComparativeReport({ params }: { params: Promise<{ id: st
       <div className="header-info">
         <h2>Comparative QA Report For {ctx.subsidiary}</h2>
         <p>
-          NetSuite → Xero{report.slug === "inventory" || report.slug === "jobs-wip" ? " + Gojee" : ""} · {ctx.xeroOrg}
+          NetSuite → Xero{report.slug === "inventory" || report.slug === "jobs-wip" || report.slug === "attachments" ? " + Gojee" : ""} · {ctx.xeroOrg}
         </p>
         <p>
           {ctx.client} · Migration {ctx.migrationId} · Cutover {ctx.cutover}

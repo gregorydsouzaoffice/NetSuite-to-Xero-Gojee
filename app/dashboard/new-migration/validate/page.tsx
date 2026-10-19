@@ -10,6 +10,7 @@ import NextButton from "@/components/next-button"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
+import { attachmentSummary, specialHandlingNote } from "@/lib/demo-data/attachments"
 import { categories } from "@/lib/demo-data/migration"
 import { SUBSIDIARY_BY_ID } from "@/lib/demo-data/momento"
 import { useDemo } from "@/lib/demo-store"
@@ -50,8 +51,13 @@ export default function ValidateData() {
     return () => clearInterval(interval)
   }, [])
 
+  const att = attachmentSummary(subId, fromPeriod)
+  const warnings: typeof WARNINGS = {
+    ...WARNINGS,
+    attachments: { count: att.special.length, message: `${att.special.length} of ${att.total.toLocaleString()} files need special handling: ${specialHandlingNote(att)}. Every file stays in the manifest.` },
+  }
   const validationResults = categories(subId, fromPeriod).map((c) => {
-    const w = WARNINGS[c.key]?.count ?? 0
+    const w = warnings[c.key]?.count ?? 0
     return {
       ...c,
       valid: c.count,
@@ -59,7 +65,7 @@ export default function ValidateData() {
       status: w > 0 ? "warning" : "success",
     }
   })
-  const validationWarnings = Object.entries(WARNINGS).map(([key, w], id) => ({
+  const validationWarnings = Object.entries(warnings).map(([key, w], id) => ({
     id,
     category: validationResults.find((r) => r.key === key)?.label ?? key,
     message: w.message,

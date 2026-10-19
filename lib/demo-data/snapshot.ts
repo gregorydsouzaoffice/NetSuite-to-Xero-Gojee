@@ -493,22 +493,6 @@ export function openQuotes(subsidiaryId: string): QuoteRow[] {
   }))
 }
 
-/** Files attached to NetSuite transactions and records (full history) */
-export function attachmentCount(subsidiaryId: string): number {
-  const base: Record<string, number> = { "1": 120, "2": 1284, "3": 2310, "4": 410, "5": 980, "6": 60, "7": 760, "8": 1105 }
-  return base[subsidiaryId] ?? 0
-}
-
-export function sampleAttachments() {
-  return [
-    { file: "Bidfood-tax-invoice-88104.pdf", type: "PDF", linkedTo: "Bill BILL-88104", size: "184 KB" },
-    { file: "Crown-catering-order-signed.pdf", type: "PDF", linkedTo: "Invoice INV-35210", size: "1.2 MB" },
-    { file: "Moretti-oven-warranty.pdf", type: "PDF", linkedTo: "Item EQ-OVEN-MORETTI-S100", size: "2.4 MB" },
-    { file: "Lion-delivery-docket-0921.jpg", type: "JPG", linkedTo: "Bill BILL-88109", size: "640 KB" },
-    { file: "Origin-energy-sep-2026.pdf", type: "PDF", linkedTo: "Bill BILL-88114", size: "212 KB" },
-  ]
-}
-
 /** Counts the Gojee loader writes for a subsidiary (R-37) */
 export function gojeeSnapshot(subsidiaryId: string) {
   const inv = inventoryTotals(subsidiaryId)

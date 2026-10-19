@@ -2,6 +2,7 @@
  * The categories one entity migrates, with counts. Extract, Map, Validate,
  * Import and the Report all read from here so the numbers agree everywhere.
  */
+import { HANDLING_LABEL, attachmentManifest, attachmentTotal, type AttachmentFile } from "./attachments"
 import { CHART_SIZE, NETSUITE_CHART, XERO_TARGET_BY_CODE } from "./chart"
 import { CONTACTS, ITEMS, MASTER_COUNTS, recordCounts } from "./momento"
 import { FIRST_PERIOD, historyShare } from "../periods"
@@ -14,9 +15,7 @@ import {
   jobTasks,
   openJobs,
   openPurchaseOrders,
-  attachmentCount,
   openQuotes,
-  sampleAttachments,
 } from "./snapshot"
 
 export type CategorySystem = "xero" | "gojee"
@@ -71,9 +70,9 @@ export function categories(subsidiaryId: string, fromPeriod: string = FIRST_PERI
       key: "attachments",
       label: "Attachments",
       system: "xero",
-      count: Math.round(attachmentCount(subsidiaryId) * share),
-      source: "File Cabinet · files on transactions",
-      becomes: "Xero attachments on invoices, bills and contacts",
+      count: attachmentTotal(subsidiaryId, fromPeriod),
+      source: "File Cabinet · transactions, contacts, financial docs, general",
+      becomes: "Attached to the matching Xero record; others to Xero Files or external storage",
     },
     { key: "stock", label: "Stock on Hand & Serials", system: "gojee", count: g.items + g.serials, source: "record/v1/inventoryItem (on hand)", becomes: "Gojee inventory" },
     { key: "jobs", label: "Jobs & WIP", system: "gojee", count: g.jobs, source: "record/v1/job", becomes: "Gojee jobs (status, dates, PM); WIP = cost − billed" },
@@ -243,9 +242,17 @@ export function sampleRows(subsidiaryId: string): Record<string, { title: string
       rows: openQuotes(subsidiaryId).map((q) => [q.quoteNumber, q.customer, q.expires.split("-").reverse().join("/"), amt(q.amount), "Imported"]),
     },
     attachments: {
-      title: "Attachments (Xero)",
-      headers: ["File", "Type", "Attached To", "Size", "Status"],
-      rows: sampleAttachments().map((a) => [a.file, a.type, a.linkedTo, a.size, "Imported"]),
+      title: "Attachments — manifest sample (every file is tracked)",
+      headers: ["NetSuite Record", "NetSuite ID", "File", "Format", "Size", "Destination", "Status"],
+      rows: attachmentSamples(subsidiaryId).map((a) => [
+        `${a.netsuiteRecordType} ${a.netsuiteRef === "—" ? "" : a.netsuiteRef}`.trim(),
+        a.netsuiteRecordId,
+        a.filename,
+        a.format,
+        `${a.sizeMb.toFixed(2)} MB`,
+        a.destinationRef,
+        HANDLING_LABEL[a.handling],
+      ]),
     },
     purchaseOrders: {
       title: "Open Purchase Orders (Gojee)",
@@ -255,4 +262,19 @@ export function sampleRows(subsidiaryId: string): Record<string, { title: string
         .map((p) => [p.poNumber, p.vendor, amt(p.amount), "Imported"]),
     },
   }
+}
+
+/** One example of each way a file is handled, plus a few ordinary ones */
+function attachmentSamples(subsidiaryId: string): AttachmentFile[] {
+  const files = attachmentManifest(subsidiaryId)
+  const picks: AttachmentFile[] = []
+  for (const h of ["attach", "convert", "compress", "xero-files", "gojee", "external"] as const) {
+    const f = files.find((x) => x.handling === h && !picks.includes(x))
+    if (f) picks.push(f)
+  }
+  for (const f of files) {
+    if (picks.length >= 9) break
+    if (!picks.includes(f) && f.category !== picks[picks.length - 1]?.category) picks.push(f)
+  }
+  return picks
 }

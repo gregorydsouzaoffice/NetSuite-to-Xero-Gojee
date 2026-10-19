@@ -2,6 +2,7 @@
  * The comparative reports opened from the Report page (one entity).
  * The new-tab report page, the PDF and the Excel export all render these.
  */
+import { HANDLING_LABEL, XERO_ATTACHMENT_RULES, attachmentSummary } from "../demo-data/attachments"
 import { CLIENT_NAME, SUBSIDIARY_BY_ID, XERO_ORG_BY_ID, shortName } from "../demo-data/momento"
 import {
   FX_RECONCILING_PERIODS,
@@ -31,7 +32,7 @@ export interface Table {
   footer?: Record<string, Cell>
 }
 
-export type ReportKey = "trial-balance" | "aged-receivable" | "aged-payable" | "inventory" | "jobs-wip"
+export type ReportKey = "trial-balance" | "aged-receivable" | "aged-payable" | "inventory" | "jobs-wip" | "attachments"
 
 export interface Report {
   id: string
@@ -46,7 +47,7 @@ export interface Report {
   notes: string[]
 }
 
-export const REPORT_KEYS: ReportKey[] = ["trial-balance", "aged-receivable", "aged-payable", "inventory", "jobs-wip"]
+export const REPORT_KEYS: ReportKey[] = ["trial-balance", "aged-receivable", "aged-payable", "inventory", "jobs-wip", "attachments"]
 
 const sum = (rows: Record<string, Cell>[], key: string) => round2(rows.reduce((s, r) => s + (Number(r[key]) || 0), 0))
 
@@ -260,6 +261,72 @@ function jobsReport(sub: string): Report {
   }
 }
 
+function attachmentsReport(sub: string, fromPeriod: string): Report {
+  const s = attachmentSummary(sub, fromPeriod)
+  const missing = s.files.filter((f) => !f.destinationRef)
+  return {
+    id: "Report 6",
+    slug: "attachments",
+    title: "Attachment Manifest",
+    short: "Attachments",
+    subsidiaryId: sub,
+    pass: missing.length === 0,
+    passRule: "Every file has a destination reference; nothing is dropped.",
+    headline: `${s.total.toLocaleString()} files (${(s.totalMb / 1024).toFixed(2)} GB) tracked from NetSuite record to destination.`,
+    tables: [
+      {
+        title: "By category",
+        columns: [
+          { key: "category", label: "Category" },
+          { key: "records", label: "NetSuite records" },
+          { key: "destination", label: "Destination" },
+          { key: "files", label: "Files", kind: "int" },
+          { key: "size", label: "Size (MB)", kind: "money" },
+        ],
+        rows: s.byCategory.map((c) => ({ category: c.label, records: c.netsuiteRecords, destination: c.destination, files: c.files, size: c.sizeMb })),
+        footer: { category: "TOTAL", files: s.total, size: s.totalMb },
+      },
+      {
+        title: "By handling",
+        columns: [
+          { key: "label", label: "Handling" },
+          { key: "files", label: "Files", kind: "int" },
+        ],
+        rows: s.byHandling.filter((h) => h.files > 0).map((h) => ({ label: h.label, files: h.files })),
+      },
+      {
+        title: "File manifest",
+        columns: [
+          { key: "line", label: "#", kind: "int" },
+          { key: "recordType", label: "NetSuite record type" },
+          { key: "recordId", label: "NetSuite ID" },
+          { key: "ref", label: "NetSuite ref" },
+          { key: "filename", label: "File name" },
+          { key: "format", label: "Format" },
+          { key: "size", label: "Size (MB)", kind: "money" },
+          { key: "destinationRef", label: "Destination reference" },
+          { key: "status", label: "Status" },
+        ],
+        rows: s.files.map((f) => ({
+          line: f.line,
+          recordType: f.netsuiteRecordType,
+          recordId: f.netsuiteRecordId,
+          ref: f.netsuiteRef,
+          filename: f.filename,
+          format: f.format,
+          size: f.sizeMb,
+          destinationRef: f.destinationRef,
+          status: HANDLING_LABEL[f.handling],
+        })),
+      },
+    ],
+    notes: [
+      `Xero limits applied: ${XERO_ATTACHMENT_RULES.maxFileMb} MB per file, ${XERO_ATTACHMENT_RULES.maxPerRecord} files per record. Unsupported formats are kept in ${XERO_ATTACHMENT_RULES.externalStore} and linked from the Xero record.`,
+      "Open purchase orders and open quotes carry their files into Gojee; closed ones go to Xero Files.",
+    ],
+  }
+}
+
 export function buildReport(key: ReportKey, sub: string, fromPeriod: string = FIRST_PERIOD): Report {
   switch (key) {
     case "trial-balance":
@@ -271,6 +338,8 @@ export function buildReport(key: ReportKey, sub: string, fromPeriod: string = FI
       return inventoryReport(sub)
     case "jobs-wip":
       return jobsReport(sub)
+    case "attachments":
+      return attachmentsReport(sub, fromPeriod)
   }
 }
 

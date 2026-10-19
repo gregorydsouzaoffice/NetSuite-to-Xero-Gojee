@@ -20,6 +20,7 @@ import {
   XCircle,
 } from "lucide-react"
 import { ModuleComparisonModal } from "./module-comparison-modal"
+import { attachmentSummary, specialHandlingNote } from "@/lib/demo-data/attachments"
 import { categories, sampleRows } from "@/lib/demo-data/migration"
 import { SUBSIDIARY_BY_ID, XERO_ORG_BY_ID } from "@/lib/demo-data/momento"
 import { useDemo } from "@/lib/demo-store"
@@ -112,6 +113,12 @@ const comparativeReports = [
     body: "Compare open jobs, cost and billed to date, WIP and retention between NetSuite and Gojee.",
     tile: "bg-[hsl(var(--brand-pink))]",
   },
+  {
+    key: "attachments",
+    title: "Attachment Manifest",
+    body: "Every NetSuite file: record type and ID, file name, format, size, and where it landed in Xero, Gojee, Xero Files or external storage.",
+    tile: "bg-[hsl(var(--brand-violet))]",
+  },
 ]
 
 const RING_CIRCUMFERENCE = 2 * Math.PI * 52
@@ -121,6 +128,7 @@ export default function MigrationReport() {
   const subId = state.netsuite.subsidiaryId
   const fromPeriod = periodFromDate(state.fromDate)
   const tabData = sampleRows(subId)
+  const att = attachmentSummary(subId, fromPeriod)
   const [activeTab, setActiveTab] = useState("summary")
   const [ringDrawn, setRingDrawn] = useState(false)
   const [isDownloading, setIsDownloading] = useState<Record<string, boolean>>({})
@@ -157,7 +165,11 @@ export default function MigrationReport() {
         category: "Journals",
         message: "Journal JE-HIL-2211 had a line in another subsidiary. It was balanced on intercompany loan account 1810-MHG.",
       },
-      { id: 4, category: "Attachments", message: "3 attachments over Xero's 25 MB limit were compressed before upload." },
+      {
+        id: 4,
+        category: "Attachments",
+        message: `${att.total.toLocaleString()} files migrated with a manifest line each — ${specialHandlingNote(att)}.`,
+      },
     ],
     errors: [],
   }

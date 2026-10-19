@@ -2,7 +2,9 @@
 
 import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
-import { useRouter, useSearchParams } from "next/navigation"
+import { useRouter } from "next/navigation"
+import MigrationStepper from "@/components/migration-stepper"
+import NextButton from "@/components/next-button"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -11,7 +13,21 @@ import {
   ArrowLeft,
   ArrowRight,
   ChevronDown,
+  BadgeDollarSign,
   Banknote,
+  CalendarDays,
+  Copy,
+  ListChecks,
+  Lock,
+  PiggyBank,
+  TrendingUp,
+  UserCheck,
+  Boxes,
+  Briefcase,
+  Clock,
+  Landmark,
+  Split,
+  Warehouse,
   BookOpen,
   Building2,
   CheckCircle,
@@ -41,14 +57,16 @@ import {
    Mapping model
    - Every category has editable FIELD mappings and TREATMENT rules.
    - Chart of Accounts additionally has record-level ACCOUNT remapping.
+   - Each category lands in Xero or Gojee (`dest`).
 --------------------------------------------------------------------------- */
 
 const SKIP = "__skip__"
-const STORAGE_KEY = "mmc-map-overrides-v1"
+const STORAGE_KEY = "gojee-map-overrides-v1"
 
 interface FieldDef {
   id: string
-  xero: string
+  /** NetSuite field */
+  source: string
   suggested: string
   alternates: string[]
   /** AI could not confidently pick a target — user must map manually */
@@ -69,502 +87,452 @@ interface RuleDef {
   options: RuleOption[]
 }
 
-interface MyobAccount {
+interface TargetAccount {
   code: string
   name: string
   type: string
   tax: string
 }
 
-// Target MYOB chart of accounts available for remapping
-const MYOB_ACCOUNTS: MyobAccount[] = [
-  { code: "1-1100", name: "Business Bank Account", type: "Asset", tax: "N-T" },
-  { code: "1-1200", name: "Accounts Receivable", type: "Asset", tax: "N-T" },
-  { code: "1-2100", name: "Inventory", type: "Asset", tax: "N-T" },
-  { code: "2-1200", name: "Accounts Payable", type: "Liability", tax: "N-T" },
-  { code: "2-1400", name: "GST Collected", type: "Liability", tax: "GST" },
-  { code: "3-1000", name: "Retained Earnings", type: "Equity", tax: "N-T" },
-  { code: "4-1000", name: "Sales Income", type: "Income", tax: "GST on Income" },
-  { code: "4-2000", name: "Service Income", type: "Income", tax: "GST on Income" },
-  { code: "4-3000", name: "Other Income", type: "Income", tax: "GST on Income" },
-  { code: "5-1000", name: "Cost of Goods Sold", type: "Cost of Sales", tax: "GST on Expenses" },
-  { code: "6-1100", name: "Office Expenses", type: "Expense", tax: "GST on Expenses" },
-  { code: "6-1200", name: "Travel Expenses", type: "Expense", tax: "GST on Expenses" },
-  { code: "6-1300", name: "Marketing Expenses", type: "Expense", tax: "GST on Expenses" },
-  { code: "6-9000", name: "Suspense / Unassigned", type: "Expense", tax: "N-T" },
+// Target Xero chart of accounts available for remapping
+const TARGET_ACCOUNTS: TargetAccount[] = [
+  { code: "090", name: "CBA Operating Account", type: "Asset", tax: "BAS Excluded" },
+  { code: "095", name: "Undeposited Funds Clearing", type: "Asset", tax: "BAS Excluded" },
+  { code: "610", name: "Accounts Receivable", type: "Asset", tax: "BAS Excluded" },
+  { code: "630", name: "Inventory", type: "Asset", tax: "BAS Excluded" },
+  { code: "640", name: "Work in Progress", type: "Asset", tax: "BAS Excluded" },
+  { code: "800", name: "Accounts Payable", type: "Liability", tax: "BAS Excluded" },
+  { code: "820", name: "GST", type: "Liability", tax: "BAS Excluded" },
+  { code: "835", name: "Gift Vouchers Liability", type: "Liability", tax: "BAS Excluded" },
+  { code: "860", name: "Rounding", type: "Liability", tax: "BAS Excluded" },
+  { code: "960", name: "Retained Earnings", type: "Equity", tax: "BAS Excluded" },
+  { code: "201", name: "Sales – Dine-in", type: "Income", tax: "GST on Income" },
+  { code: "202", name: "Sales – Delivery", type: "Income", tax: "GST on Income" },
+  { code: "203", name: "Sales – Catering", type: "Income", tax: "GST on Income" },
+  { code: "260", name: "Other Revenue", type: "Income", tax: "GST on Income" },
+  { code: "310", name: "Cost of Goods Sold", type: "Cost of Sales", tax: "GST on Expenses" },
+  { code: "406", name: "Delivery Platform Commission", type: "Expense", tax: "GST on Expenses" },
+  { code: "429", name: "General Expenses", type: "Expense", tax: "GST on Expenses" },
+  { code: "469", name: "Rent", type: "Expense", tax: "GST on Expenses" },
+  { code: "477", name: "Wages and Salaries", type: "Expense", tax: "BAS Excluded" },
 ]
 
 const ACCOUNT_TYPE_ORDER = ["Asset", "Liability", "Equity", "Income", "Cost of Sales", "Expense"]
 
-const myobAccount = (code: string) => MYOB_ACCOUNTS.find((a) => a.code === code)
+const targetAccount = (code: string) => TARGET_ACCOUNTS.find((a) => a.code === code)
 
 const accountOptions = (codes?: string[]): RuleOption[] =>
-  MYOB_ACCOUNTS.filter((a) => !codes || codes.includes(a.code)).map((a) => ({
+  TARGET_ACCOUNTS.filter((a) => !codes || codes.includes(a.code)).map((a) => ({
     value: a.code,
     label: `${a.code} · ${a.name}`,
     hint: a.type,
   }))
 
-// Sample Xero accounts with their suggested MYOB targets (record-level remapping)
-const XERO_ACCOUNTS: { code: string; name: string; type: string; suggested: string; needsReview?: boolean }[] = [
-  { code: "090", name: "Business Bank Account", type: "Bank", suggested: "1-1100" },
-  { code: "200", name: "Sales", type: "Revenue", suggested: "4-1000" },
-  { code: "260", name: "Other Revenue", type: "Revenue", suggested: "", needsReview: true },
-  { code: "310", name: "Cost of Goods Sold", type: "Direct Costs", suggested: "5-1000" },
-  { code: "400", name: "Advertising", type: "Expense", suggested: "6-1300" },
-  { code: "493", name: "Travel - National", type: "Expense", suggested: "6-1200" },
-  { code: "610", name: "Accounts Receivable", type: "Current Asset", suggested: "1-1200" },
-  { code: "800", name: "Accounts Payable", type: "Current Liability", suggested: "2-1200" },
+// Sample NetSuite accounts with their suggested Xero targets (record-level remapping)
+const SOURCE_ACCOUNTS: { code: string; name: string; type: string; suggested: string; needsReview?: boolean }[] = [
+  { code: "1000", name: "CBA Operating Account", type: "Bank", suggested: "090" },
+  { code: "1050", name: "Undeposited Funds", type: "Other Current Asset", suggested: "095" },
+  { code: "1100", name: "Accounts Receivable", type: "Accounts Receivable", suggested: "610" },
+  { code: "1300", name: "Inventory Asset", type: "Other Current Asset", suggested: "630" },
+  { code: "1350", name: "Work in Progress", type: "Other Current Asset", suggested: "640" },
+  { code: "2450", name: "Gift Vouchers Liability", type: "Other Current Liability", suggested: "835" },
+  { code: "4000·DI", name: "Food Sales – Dine-in channel", type: "Income", suggested: "201" },
+  { code: "4000·DL", name: "Food Sales – Delivery channel", type: "Income", suggested: "202" },
+  { code: "6600", name: "Delivery Platform Fees", type: "Expense", suggested: "406" },
+  { code: "9999", name: "Rounding", type: "Other Expense", suggested: "860" },
 ]
+
+type Dest = "xero" | "gojee"
+
+const DEST_NAME: Record<Dest, string> = { xero: "Xero", gojee: "Gojee" }
 
 interface CategoryDef {
   key: string
   label: string
+  dest: Dest
   fields: FieldDef[]
   rules: RuleDef[]
 }
 
-const f = (id: string, xero: string, suggested: string, alternates: string[] = []): FieldDef => ({
+const f = (id: string, source: string, suggested: string, alternates: string[] = []): FieldDef => ({
   id,
-  xero,
+  source,
   suggested,
   alternates,
 })
 
-// A field the AI flagged as ambiguous — no suggestion, user picks from candidates
-const fr = (id: string, xero: string, candidates: string[]): FieldDef => ({
-  id,
-  xero,
-  suggested: "",
-  alternates: candidates,
-  needsReview: true,
+const keep = (label: string, description: string, recommended: string, other: string): RuleDef => ({
+  id: label.toLowerCase().replace(/[^a-z]+/g, "-"),
+  label,
+  description,
+  suggested: "a",
+  options: [
+    { value: "a", label: recommended, hint: "Recommended" },
+    { value: "b", label: other },
+  ],
 })
 
 const CATEGORIES: CategoryDef[] = [
   {
     key: "accounts",
     label: "Chart of Accounts",
+    dest: "xero",
     fields: [
-      f("code", "Account Code", "Account Number", ["Account Alias"]),
-      f("name", "Account Name", "Account Name", ["Display Name"]),
-      f("type", "Account Type", "Account Type", ["Account Classification"]),
-      f("tax", "Tax Type", "GST Code", ["Tax Code Override", "No Tax (N-T)"]),
-      f("desc", "Description", "Description", ["Notes"]),
+      f("number", "Account Number", "Account Code", ["Reporting Code"]),
+      f("name", "Account Name", "Account Name", ["Description"]),
+      f("type", "Account Type", "Account Type", ["Account Class"]),
+      f("tax", "Default Tax Code", "Tax Rate", ["BAS Excluded"]),
     ],
     rules: [
-      {
-        id: "numbering",
-        label: "Account numbering",
-        description: "How Xero account codes become MYOB account numbers",
-        suggested: "adopt",
-        options: [
-          { value: "adopt", label: "Adopt MYOB numbering (4-xxxx)", hint: "Recommended" },
-          { value: "keep", label: "Keep Xero codes as aliases" },
-        ],
-      },
-      {
-        id: "inactive",
-        label: "Inactive accounts",
-        description: "Xero accounts that are archived or unused",
-        suggested: "skip",
-        options: [
-          { value: "skip", label: "Skip inactive accounts", hint: "Recommended" },
-          { value: "migrate", label: "Migrate all accounts" },
-        ],
-      },
+      keep("Channel segment", "Sales lines carry a Channel (Dine-in, Delivery, Catering)", "Split into one Xero account per channel", "Keep one sales account"),
+      keep("Inactive accounts", "NetSuite accounts that are inactive or unused", "Skip inactive accounts", "Migrate all accounts"),
+    ],
+  },
+  {
+    key: "segments",
+    label: "Segment Routing",
+    dest: "xero",
+    fields: [
+      f("department", "Department (cost centre)", "Tracking Category 1", ["Tracking Category 2", "Memo text"]),
+      f("location", "Location", "Tracking Category 2", ["Tracking Category 1", "Memo text"]),
+      f("channel", "Channel (custom segment)", "Account split", ["Tracking Category 1", "Memo text"]),
+      f("class", "Class (product line)", "Item codes", ["Memo text"]),
+      f("project", "Project / Job", "Gojee job", ["Memo text"]),
+      f("region", "Region / Sales rep", "Contact groups", ["Memo text"]),
+    ],
+    rules: [
+      keep("Tracking limit", "Xero allows two active tracking categories", "Department and Location only", "Ask me per segment"),
     ],
   },
   {
     key: "customers",
     label: "Customers",
+    dest: "xero",
     fields: [
-      f("name", "Contact Name", "Customer Name", ["Company Name", "Display Name"]),
-      f("email", "Email Address", "Email", ["Billing Email"]),
-      f("phone", "Phone Number", "Phone", ["Mobile", "Office Phone"]),
-      f("address", "Billing Address", "Address", ["Billing Address", "Shipping Address"]),
+      f("name", "Company Name", "Contact Name", ["Display Name"]),
+      f("email", "Email", "Email Address", ["Accounts Email"]),
+      f("phone", "Phone", "Phone Number", ["Mobile"]),
+      f("abn", "Tax Number (ABN)", "Tax Number", []),
+      f("region", "Region", "Contact Group", ["Memo"]),
     ],
     rules: [
-      {
-        id: "missing-contact",
-        label: "Contacts with missing details",
-        description: "Customers without an email or phone number",
-        suggested: "placeholder",
-        options: [
-          { value: "placeholder", label: "Import with placeholder", hint: "Recommended" },
-          { value: "flag", label: "Import and flag for review" },
-          { value: "skip", label: "Skip these contacts" },
-        ],
-      },
-      {
-        id: "terms",
-        label: "Credit terms",
-        description: "Payment terms applied to each customer card",
-        suggested: "map",
-        options: [
-          { value: "map", label: "Map from Xero terms", hint: "Recommended" },
-          { value: "default", label: "Use MYOB default (30 days)" },
-        ],
-      },
+      keep("Contacts with missing details", "Customers without an email or phone number", "Import with placeholder", "Skip these contacts"),
+      keep("Credit terms", "Payment terms on each customer", "Map from NetSuite terms", "Use Xero default (30 days)"),
     ],
   },
   {
     key: "vendors",
-    label: "Vendors",
+    label: "Suppliers",
+    dest: "xero",
     fields: [
-      f("name", "Contact Name", "Vendor Name", ["Supplier Name", "Display Name"]),
-      f("email", "Email Address", "Email", ["Remittance Email"]),
-      f("phone", "Phone Number", "Phone", ["Mobile", "Office Phone"]),
-      f("address", "Billing Address", "Address", ["Postal Address"]),
+      f("name", "Company Name", "Contact Name", ["Display Name"]),
+      f("email", "Email", "Email Address", ["Remittance Email"]),
+      f("abn", "Tax Number (ABN)", "Tax Number", []),
+      f("bank", "Bank Details", "Bank Account Details", []),
     ],
-    rules: [
-      {
-        id: "missing-contact",
-        label: "Vendors with missing details",
-        description: "Suppliers without an email or phone number",
-        suggested: "placeholder",
-        options: [
-          { value: "placeholder", label: "Import with placeholder", hint: "Recommended" },
-          { value: "flag", label: "Import and flag for review" },
-          { value: "skip", label: "Skip these vendors" },
-        ],
-      },
-      {
-        id: "duplicates",
-        label: "Possible duplicates",
-        description: "Vendors whose names closely match an existing card",
-        suggested: "merge",
-        options: [
-          { value: "merge", label: "Merge into existing card", hint: "Recommended" },
-          { value: "separate", label: "Create separate cards" },
-        ],
-      },
-    ],
+    rules: [keep("Possible duplicates", "Suppliers whose names closely match an existing Xero contact", "Merge into existing contact", "Create separate contacts")],
   },
   {
     key: "items",
     label: "Items",
+    dest: "xero",
     fields: [
-      f("name", "Item Name", "Item Name", ["Display Name"]),
-      f("code", "Item Code", "Item Code", ["SKU", "Item Number"]),
-      f("desc", "Description", "Description", ["Sales Description", "Notes"]),
-      f("price", "Unit Price", "Unit Price", ["Base Selling Price", "Standard Cost"]),
+      f("code", "Item Name/Number", "Item Code", ["SKU"]),
+      f("name", "Display Name", "Item Name", ["Description"]),
+      f("class", "Class", "Item code prefix", []),
+      f("income", "Income Account", "Sales Account", []),
+      f("cogs", "COGS Account", "Purchase Account", []),
     ],
     rules: [
-      {
-        id: "tracking",
-        label: "Inventory tracking",
-        description: "Xero tracked items and their quantities",
-        suggested: "preserve",
-        options: [
-          { value: "preserve", label: "Preserve inventory tracking", hint: "Recommended" },
-          { value: "flatten", label: "Convert to non-inventoried items" },
-        ],
-      },
-      {
-        id: "no-purchase-price",
-        label: "Items without purchase price",
-        description: "Sales-only items missing buy-side details",
-        suggested: "sales-only",
-        options: [
-          { value: "sales-only", label: "Import as sales-only item", hint: "Recommended" },
-          { value: "zero-cost", label: "Import with zero cost" },
-        ],
-      },
-    ],
-  },
-  {
-    key: "sales-orders",
-    label: "Sales Orders",
-    fields: [
-      f("number", "SO Number", "Sales Order Ref", ["Order Number"]),
-      f("customer", "Customer", "Customer", ["Customer Card"]),
-      f("date", "Date", "Date", ["Order Date"]),
-      fr("expiry", "Expiry Date", ["Expiry Date", "Promised Date"]),
-      f("lines", "Line Items", "Line Items", ["Item Lines", "Service Lines"]),
-      f("total", "Total Amount", "Total Amount", ["Order Total"]),
-    ],
-    rules: [
-      {
-        id: "open-orders",
-        label: "Open sales orders",
-        description: "Orders not yet invoiced at migration time",
-        suggested: "orders",
-        options: [
-          { value: "orders", label: "Migrate as open orders", hint: "Recommended" },
-          { value: "quotes", label: "Convert to quotes" },
-          { value: "skip", label: "Skip open orders" },
-        ],
-      },
-      {
-        id: "numbering",
-        label: "Order numbering",
-        description: "Document numbers on migrated orders",
-        suggested: "keep",
-        options: [
-          { value: "keep", label: "Keep Xero numbers", hint: "Recommended" },
-          { value: "renumber", label: "Let MYOB renumber" },
-        ],
-      },
-    ],
-  },
-  {
-    key: "purchase-orders",
-    label: "Purchase Orders",
-    fields: [
-      f("number", "PO Number", "Purchase Order Ref", ["PO Number"]),
-      f("supplier", "Supplier", "Vendor", ["Supplier Card"]),
-      f("date", "Date", "Date", ["Order Date"]),
-      f("delivery", "Delivery Date", "Delivery Date", ["Promised Date"]),
-      f("lines", "Line Items", "Line Items", ["Item Lines", "Service Lines"]),
-      f("total", "Total Amount", "Total Amount", ["Order Total"]),
-    ],
-    rules: [
-      {
-        id: "open-orders",
-        label: "Open purchase orders",
-        description: "Orders not yet billed at migration time",
-        suggested: "orders",
-        options: [
-          { value: "orders", label: "Migrate as open orders", hint: "Recommended" },
-          { value: "skip", label: "Skip open orders" },
-        ],
-      },
-      {
-        id: "numbering",
-        label: "Order numbering",
-        description: "Document numbers on migrated orders",
-        suggested: "keep",
-        options: [
-          { value: "keep", label: "Keep Xero numbers", hint: "Recommended" },
-          { value: "renumber", label: "Let MYOB renumber" },
-        ],
-      },
+      keep("Inventory tracking", "Stock is held in Gojee", "Create as untracked items in Xero", "Track inventory in Xero"),
+      keep("Long item codes", "Xero item codes are limited to 30 characters", "Shorten automatically", "Skip the item"),
     ],
   },
   {
     key: "invoices",
     label: "Invoices",
+    dest: "xero",
     fields: [
-      f("number", "Invoice Number", "Invoice Ref", ["Invoice Number"]),
-      f("customer", "Customer", "Customer", ["Customer Card"]),
-      f("issue", "Issue Date", "Date", ["Invoice Date"]),
-      f("due", "Due Date", "Due Date", ["Payment Due Date"]),
-      f("lines", "Line Items", "Line Items", ["Item Lines", "Service Lines"]),
+      f("number", "Document Number", "Invoice Number", ["Reference"]),
+      f("customer", "Customer", "Contact", []),
+      f("date", "Date (posting period)", "Invoice Date", ["Transaction Date"]),
+      f("due", "Due Date", "Due Date", []),
+      f("lines", "Item Lines", "Line Items", []),
+      f("dept", "Department / Location", "Tracking", []),
     ],
     rules: [
-      {
-        id: "income-account",
-        label: "Default income account",
-        description: "Where invoice lines post when no account is mapped",
-        suggested: "4-1000",
-        options: accountOptions(["4-1000", "4-2000", "4-3000"]),
-      },
-      {
-        id: "rounding",
-        label: "Rounding differences",
-        description: "Cent-level differences from tax recalculation",
-        suggested: "6-9000",
-        options: accountOptions(["6-9000", "4-3000", "6-1100"]),
-      },
-      {
-        id: "tax-fallback",
-        label: "Lines with no tax code",
-        description: "Tax treatment when a Xero line has no tax type",
-        suggested: "gst",
-        options: [
-          { value: "gst", label: "Apply GST on Income", hint: "Recommended" },
-          { value: "nt", label: "Apply No Tax (N-T)" },
-        ],
-      },
+      keep("Date basis", "A transaction dated outside its posting period", "Use the period's last day", "Keep the transaction date"),
+      keep("Open jobs", "Invoices on a job that is still open", "Link to the Gojee job", "Don't link"),
     ],
   },
   {
     key: "bills",
     label: "Bills",
+    dest: "xero",
     fields: [
-      fr("number", "Bill Number", ["Expense ID", "Bill Ref", "Purchase Number"]),
-      f("supplier", "Supplier", "Vendor", ["Supplier Card"]),
-      f("issue", "Issue Date", "Date", ["Bill Date"]),
-      f("due", "Due Date", "Due Date", ["Payment Due Date"]),
-      f("lines", "Line Items", "Line Items", ["Item Lines", "Service Lines"]),
+      f("number", "Document Number", "Bill Reference", ["Invoice Number"]),
+      f("vendor", "Vendor", "Contact", []),
+      f("date", "Date (posting period)", "Bill Date", []),
+      f("lines", "Expense & Item Lines", "Line Items", []),
     ],
-    rules: [
-      {
-        id: "expense-account",
-        label: "Default expense account",
-        description: "Where bill lines post when no account is mapped",
-        suggested: "6-1100",
-        options: accountOptions(["6-1100", "6-1200", "6-1300", "5-1000"]),
-      },
-      {
-        id: "rounding",
-        label: "Rounding differences",
-        description: "Cent-level differences from tax recalculation",
-        suggested: "6-9000",
-        options: accountOptions(["6-9000", "6-1100"]),
-      },
-    ],
-  },
-  {
-    key: "invoice-payments",
-    label: "Invoice Payments",
-    fields: [
-      f("id", "Payment ID", "Payment Ref", ["Receipt Number"]),
-      f("invoice", "Invoice Number", "Invoice Ref", ["Invoice Number"]),
-      f("date", "Payment Date", "Date", ["Deposit Date"]),
-      f("amount", "Amount", "Amount", ["Applied Amount"]),
-    ],
-    rules: [
-      {
-        id: "deposit-account",
-        label: "Deposit to account",
-        description: "Bank account receiving migrated customer payments",
-        suggested: "1-1100",
-        options: accountOptions(["1-1100", "1-1200", "6-9000"]),
-      },
-      {
-        id: "overpayments",
-        label: "Overpayments",
-        description: "Payments exceeding the invoice balance",
-        suggested: "credit",
-        options: [
-          { value: "credit", label: "Create customer credit", hint: "Recommended" },
-          { value: "income", label: "Post to Other Income" },
-        ],
-      },
-    ],
-  },
-  {
-    key: "bill-payments",
-    label: "Bill Payments",
-    fields: [
-      f("id", "Payment ID", "Payment Ref", ["Remittance Number"]),
-      f("bill", "Bill Number", "Expense ID", ["Bill Ref"]),
-      f("date", "Payment Date", "Date", ["Withdrawal Date"]),
-      f("amount", "Amount", "Amount", ["Applied Amount"]),
-    ],
-    rules: [
-      {
-        id: "pay-from",
-        label: "Pay from account",
-        description: "Bank account funding migrated supplier payments",
-        suggested: "1-1100",
-        options: accountOptions(["1-1100", "6-9000"]),
-      },
-      {
-        id: "discounts",
-        label: "Supplier discounts taken",
-        description: "Early-payment discounts recorded in Xero",
-        suggested: "4-3000",
-        options: accountOptions(["4-3000", "6-9000"]),
-      },
-    ],
+    rules: [keep("Foreign currency", "Bills in USD or NZD", "Keep currency and NetSuite rate", "Convert to AUD")],
   },
   {
     key: "credit-notes",
     label: "Credit Notes",
+    dest: "xero",
     fields: [
-      f("number", "Credit Note Number", "Credit Ref", ["Adjustment Note Number"]),
-      f("customer", "Customer", "Customer", ["Customer Card"]),
-      f("issue", "Issue Date", "Date", ["Credit Date"]),
-      f("amount", "Amount", "Amount", ["Credit Total"]),
+      f("number", "Credit Memo #", "Credit Note Number", []),
+      f("customer", "Customer", "Contact", []),
+      f("applied", "Applied To", "Allocations", []),
     ],
-    rules: [
-      {
-        id: "unapplied",
-        label: "Unapplied credit balances",
-        description: "Credit remaining after allocation to invoices",
-        suggested: "credit",
-        options: [
-          { value: "credit", label: "Keep as customer credit", hint: "Recommended" },
-          { value: "refund", label: "Record as pending refund" },
-        ],
-      },
-    ],
+    rules: [keep("Allocations", "Credit memos applied to invoices", "Allocate to the same invoices", "Leave unallocated")],
   },
   {
     key: "bill-credits",
     label: "Bill Credits",
+    dest: "xero",
     fields: [
-      f("number", "Credit Note Number", "Credit Ref", ["Debit Note Number"]),
-      f("supplier", "Supplier", "Vendor", ["Supplier Card"]),
-      f("issue", "Issue Date", "Date", ["Credit Date"]),
-      f("amount", "Amount", "Amount", ["Credit Total"]),
+      f("number", "Bill Credit #", "Credit Note Number", []),
+      f("vendor", "Vendor", "Contact", []),
+      f("applied", "Applied To", "Allocations", []),
     ],
-    rules: [
-      {
-        id: "unapplied",
-        label: "Unapplied credit balances",
-        description: "Credit remaining after allocation to bills",
-        suggested: "credit",
-        options: [
-          { value: "credit", label: "Keep as supplier credit", hint: "Recommended" },
-          { value: "expense-offset", label: "Offset against expenses" },
-        ],
-      },
+    rules: [keep("Allocations", "Bill credits applied to bills", "Allocate to the same bills", "Leave unallocated")],
+  },
+  {
+    key: "invoice-payments",
+    label: "Invoice Payments",
+    dest: "xero",
+    fields: [
+      f("account", "Deposit To Account", "Bank Account", ["Undeposited Funds Clearing"]),
+      f("applied", "Applied Invoices", "Invoice", []),
+      f("cleared", "Cleared", "Is Reconciled", []),
     ],
+    rules: [keep("Unapplied amounts", "Payments larger than the invoices they pay", "Overpayment / prepayment", "Leave on account")],
+  },
+  {
+    key: "bill-payments",
+    label: "Bill Payments",
+    dest: "xero",
+    fields: [
+      f("account", "Account", "Bank Account", []),
+      f("applied", "Applied Bills", "Bills", []),
+      f("cleared", "Cleared", "Is Reconciled", []),
+    ],
+    rules: [keep("Payment runs", "One NetSuite payment covering several bills", "Batch payment in Xero", "Separate payments")],
+  },
+  {
+    key: "bank",
+    label: "Bank Transactions",
+    dest: "xero",
+    fields: [
+      f("check", "Check", "Spend Money", ["Bill Payment"]),
+      f("deposit", "Deposit", "Transfer from clearing", ["Receive Money"]),
+      f("transfer", "Transfer", "Bank Transfer", []),
+      f("refund", "Cash Refund", "Refund", ["Spend Money"]),
+    ],
+    rules: [keep("Undeposited funds", "Payments grouped into a NetSuite deposit", "Transfer from the clearing account", "Receive money per line")],
   },
   {
     key: "journals",
     label: "Journals",
+    dest: "xero",
     fields: [
-      f("number", "Journal Number", "Journal Ref", ["General Journal Number"]),
-      f("date", "Date", "Date", ["Transaction Date"]),
-      f("reference", "Reference", "Reference", ["Memo"]),
-      f("lines", "Journal Lines", "Journal Lines", ["GL Lines"]),
+      f("number", "Journal #", "Narration Reference", []),
+      f("date", "Date (posting period)", "Journal Date", []),
+      f("lines", "Lines", "Journal Lines", []),
+      f("memo", "Memo", "Narration", []),
     ],
     rules: [
       {
-        id: "unbalanced",
-        label: "Unbalanced journals",
-        description: "Entries whose debits and credits differ after mapping",
-        suggested: "6-9000",
-        options: accountOptions(["6-9000", "3-1000"]),
+        id: "intercompany",
+        label: "Intercompany lines",
+        description: "Journals with lines in another subsidiary",
+        suggested: "loan",
+        options: [
+          { value: "loan", label: "Balance on the intercompany loan account", hint: "Recommended" },
+          { value: "skip", label: "Skip other-subsidiary lines" },
+        ],
       },
       {
-        id: "numbering",
-        label: "Journal numbering",
-        description: "Reference numbers on migrated journals",
-        suggested: "keep",
-        options: [
-          { value: "keep", label: "Keep Xero references", hint: "Recommended" },
-          { value: "renumber", label: "Let MYOB renumber" },
-        ],
+        id: "rounding",
+        label: "Rounding differences",
+        description: "Cent differences after tax rounding",
+        suggested: "860",
+        options: accountOptions(["860", "429"]),
       },
     ],
   },
   {
-    key: "attachments",
-    label: "Attachments",
+    key: "inventory-journals",
+    label: "Inventory Journals",
+    dest: "xero",
     fields: [
-      f("name", "File Name", "File Name", ["Document Title"]),
-      f("type", "File Type", "File Type", ["Document Category"]),
-      f("size", "File Size", "File Size", []),
-      fr("linked", "Linked Transaction", ["Linked Record", "In Tray Document"]),
+      f("fulfil", "Item Fulfillment", "Journal: COGS / Inventory", []),
+      f("receipt", "Item Receipt", "Journal: Inventory / Accrued Purchases", []),
+      f("adjust", "Inventory Adjustment", "Journal: Adjustment / Inventory", []),
+    ],
+    rules: [keep("Opening stock", "Inventory balance at cutover", "Arrives through the history (no extra journal)", "Post an opening balance")],
+  },
+  {
+    key: "gojee-stock",
+    label: "Stock & Serials",
+    dest: "gojee",
+    fields: [
+      f("item", "Item", "Product", []),
+      f("location", "Location", "Warehouse", []),
+      f("qty", "On Hand", "Quantity", []),
+      f("serial", "Serial Numbers", "Serial Numbers", []),
+      f("cost", "Average Cost", "Unit Cost", []),
+    ],
+    rules: [keep("Stock journals", "Loading stock into Gojee", "No journal to Xero (balance already there)", "Post to Xero")],
+  },
+  {
+    key: "gojee-jobs",
+    label: "Jobs & WIP",
+    dest: "gojee",
+    fields: [
+      f("job", "Project (job) name", "Job Name", []),
+      f("customer", "Customer", "Client", []),
+      f("status", "Project Status", "Job Status", []),
+      f("dates", "Start / End Date", "Start / Due Date", []),
+      f("pm", "Project Manager", "Job Manager", []),
+      f("so", "Open Sales Order", "Job", ["Quote"]),
     ],
     rules: [
       {
-        id: "large-files",
-        label: "Files over 10 MB",
-        description: "Attachments exceeding MYOB's upload limit",
-        suggested: "compress",
+        id: "wip",
+        label: "Work in progress",
+        description: "WIP per job is calculated, not mapped",
+        suggested: "calc",
         options: [
-          { value: "compress", label: "Compress and migrate", hint: "Recommended" },
-          { value: "link", label: "Store externally and link" },
-          { value: "skip", label: "Skip large files" },
+          { value: "calc", label: "Cost to date − billed to date", hint: "Recommended" },
+          { value: "balance", label: "Use the NetSuite WIP balance" },
         ],
       },
-      {
-        id: "unsupported",
-        label: "Unsupported formats",
-        description: "File types MYOB cannot store natively",
-        suggested: "pdf",
-        options: [
-          { value: "pdf", label: "Convert to PDF", hint: "Recommended" },
-          { value: "skip", label: "Skip unsupported files" },
-        ],
-      },
+      keep("Open sales orders", "Sales orders not yet invoiced", "Create as Gojee jobs", "Create as Gojee quotes"),
     ],
+  },
+  {
+    key: "gojee-tasks",
+    label: "Job Tasks & Stages",
+    dest: "gojee",
+    fields: [
+      f("name", "Task Name", "Stage Name", []),
+      f("parent", "Parent Task", "Parent Stage", []),
+      f("planned", "Planned Work (hrs)", "Estimated Hours", []),
+      f("dates", "Start / End Date", "Start / Due Date", []),
+    ],
+    rules: [keep("Completed tasks", "Tasks already finished in NetSuite", "Import as completed stages", "Skip completed tasks")],
+  },
+  {
+    key: "gojee-templates",
+    label: "Job Templates",
+    dest: "gojee",
+    fields: [
+      f("name", "Template Name", "Template Name", []),
+      f("tasks", "Template Tasks", "Template Stages", []),
+    ],
+    rules: [
+      // TODO(GOJEE-API): confirm Gojee supports job templates
+      keep("Template support", "Partial fit — only if Gojee supports templates", "Import as Gojee job templates", "Skip templates"),
+    ],
+  },
+  {
+    key: "gojee-budgets",
+    label: "Job Budgets",
+    dest: "gojee",
+    fields: [
+      f("labor", "Budget category: Labor", "LAB Labour", ["OTH Other costs"]),
+      f("materials", "Budget category: Materials", "MAT Materials (food & beverage)", ["OTH Other costs"]),
+      f("sub", "Budget category: Subcontract", "SUB Subcontractors", ["OTH Other costs"]),
+      f("equipment", "Budget category: Equipment", "EQP Equipment hire", ["OTH Other costs"]),
+      f("expense", "Budget category: Expense", "OTH Other costs", []),
+    ],
+    rules: [keep("Unmatched categories", "NetSuite budget categories without a Gojee cost code", "Put into OTH Other costs", "Create a new cost code")],
+  },
+  {
+    key: "gojee-cost",
+    label: "Job Cost & Revenue",
+    dest: "gojee",
+    fields: [
+      f("cost", "Transaction lines tagged to project", "Cost to date by cost code", []),
+      f("revenue", "Invoices tagged to project", "Revenue to date", []),
+      f("bill-link", "Bill line detail", "Link to Xero bill ID", []),
+      f("inv-link", "Invoice line detail", "Link to Xero invoice ID", []),
+    ],
+    rules: [keep("Line detail", "Individual bill and invoice lines", "Summary in Gojee, detail linked to Xero", "Copy every line into Gojee")],
+  },
+  {
+    key: "gojee-retention",
+    label: "Retention",
+    dest: "gojee",
+    fields: [
+      f("field", "custbody_retention (custom field)", "Retention Held", ["Retention invoice line"]),
+      f("rate", "Retention %", "Retention Rate", []),
+    ],
+    rules: [keep("Source of retention", "Client-specific: custom field or a separate invoice line", "Read the custom field", "Read the invoice line")],
+  },
+  {
+    key: "gojee-pos",
+    label: "Open Purchase Orders",
+    dest: "gojee",
+    fields: [
+      f("number", "PO Number", "Purchase Order Number", []),
+      f("vendor", "Vendor", "Supplier", []),
+      f("received", "Quantity Received", "Received", []),
+    ],
+    rules: [keep("Sending to Xero", "Gojee passes purchase orders on to Xero", "Gojee sends them after cutover", "Don't send")],
+  },
+  {
+    key: "gojee-timesheets",
+    label: "Timesheets (unbilled)",
+    dest: "gojee",
+    fields: [
+      f("employee", "Employee", "Staff Member", []),
+      f("job", "Project", "Job", []),
+      f("task", "Project Task", "Job Stage", []),
+      f("hours", "Hours", "Hours", []),
+      f("date", "Date", "Date", []),
+      f("billable", "Billable", "Billable", []),
+    ],
+    rules: [
+      keep("Which entries", "timeBill records on open jobs", "Unbilled only (billed = false)", "All time entries"),
+      keep("Payroll", "Time entries on open jobs", "Gojee only — not Xero payroll", "Also send to Xero payroll"),
+    ],
+  },
+  {
+    key: "gojee-schedule",
+    label: "Staff Schedule",
+    dest: "gojee",
+    fields: [
+      f("employee", "Employee", "Staff Member", []),
+      f("job", "Project", "Job", []),
+      f("dates", "Start / End Date", "Booking Dates", []),
+      f("hours", "Allocated Hours", "Scheduled Hours", []),
+    ],
+    rules: [keep("Past allocations", "Resource allocations before cutover", "Future bookings only", "Import all allocations")],
+  },
+  {
+    key: "gojee-staff",
+    label: "Staff",
+    dest: "gojee",
+    fields: [
+      f("employee", "Employee", "Staff Member (from Xero payroll)", []),
+      f("email", "Email", "Match key", ["Employee ID"]),
+    ],
+    rules: [keep("Staff master", "Staff come from Xero payroll via the Gojee sync", "Link only — don't create staff", "Create staff in Gojee")],
+  },
+  {
+    key: "gojee-rates",
+    label: "Billing Rates",
+    dest: "gojee",
+    fields: [
+      f("labor", "Labor cost on employee", "Staff Cost Rate", []),
+      f("charge", "Project billing / charge rules", "Charge Rate", []),
+      f("tiers", "Tiered / weekend uplift rules", "Separate charge rate", ["Ignore"]),
+    ],
+    rules: [keep("Complex charge rules", "Partial fit: NetSuite rate logic is richer than Gojee", "Simplify to a charge rate per role", "Skip complex rules")],
   },
 ]
 
@@ -630,27 +598,37 @@ function MappingSelect({
 
 const CATEGORY_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
   accounts: Database,
+  segments: Split,
   customers: Users,
   vendors: Building2,
   items: Package,
-  "sales-orders": ShoppingCart,
-  "purchase-orders": ClipboardList,
   invoices: Receipt,
   bills: FileText,
-  "invoice-payments": CreditCard,
-  "bill-payments": Banknote,
   "credit-notes": FileMinus,
   "bill-credits": FilePlus,
+  "invoice-payments": CreditCard,
+  "bill-payments": Banknote,
+  bank: Landmark,
   journals: BookOpen,
-  attachments: Paperclip,
+  "inventory-journals": Boxes,
+  "gojee-stock": Warehouse,
+  "gojee-jobs": Briefcase,
+  "gojee-tasks": ListChecks,
+  "gojee-templates": Copy,
+  "gojee-budgets": PiggyBank,
+  "gojee-cost": TrendingUp,
+  "gojee-retention": Lock,
+  "gojee-schedule": CalendarDays,
+  "gojee-staff": UserCheck,
+  "gojee-rates": BadgeDollarSign,
+  "gojee-pos": ClipboardList,
+  "gojee-timesheets": Clock,
 }
 
 /* ------------------------------------------------------------------------- */
 
 export default function MapData() {
   const router = useRouter()
-  const searchParams = useSearchParams()
-  const destination = searchParams.get("destination") || "myob"
   const [mounted, setMounted] = useState(false)
   const [hydrated, setHydrated] = useState(false)
 
@@ -698,14 +676,14 @@ export default function MapData() {
     for (const cat of CATEGORIES) {
       counts[cat.key] = cat.fields.filter((fl) => fl.needsReview && !fieldOverrides[`${cat.key}:${fl.id}`]).length
     }
-    counts["accounts"] += XERO_ACCOUNTS.filter((a) => a.needsReview && !accountOverrides[a.code]).length
+    counts["accounts"] += SOURCE_ACCOUNTS.filter((a) => a.needsReview && !accountOverrides[a.code]).length
     return counts
   }, [fieldOverrides, accountOverrides])
 
   const totalCustom = Object.values(customCounts).reduce((a, b) => a + b, 0)
   const totalReview = Object.values(reviewCounts).reduce((a, b) => a + b, 0)
   const totalMappings =
-    CATEGORIES.reduce((acc, c) => acc + c.fields.length + c.rules.length, 0) + XERO_ACCOUNTS.length
+    CATEGORIES.reduce((acc, c) => acc + c.fields.length + c.rules.length, 0) + SOURCE_ACCOUNTS.length
 
   const resetAll = () => {
     setFieldOverrides({})
@@ -726,8 +704,8 @@ export default function MapData() {
     setMap(next)
   }
 
-  const handleNextStep = () => router.push(`/dashboard/new-migration/validate?destination=${destination}`)
-  const handlePrevStep = () => router.push(`/dashboard/new-migration/extract?destination=${destination}`)
+  const handleNextStep = () => router.push("/dashboard/new-migration/validate")
+  const handlePrevStep = () => router.push("/dashboard/new-migration/extract")
 
   /* --- small render helpers ------------------------------------------------ */
 
@@ -780,7 +758,7 @@ export default function MapData() {
       <div className="container py-8 max-w-6xl mx-auto">
         <div className="mb-8">
           <Link
-            href={`/dashboard/new-migration/extract?destination=${destination}`}
+            href="/dashboard/new-migration/extract"
             className="flex items-center text-sm text-muted-foreground hover:text-foreground transition-colors group"
           >
             <div className="mr-2 h-8 w-8 rounded-full bg-card border border-border/60 flex items-center justify-center group-hover:border-primary/30 group-hover:bg-primary/5 transition-all shadow-sm">
@@ -792,83 +770,13 @@ export default function MapData() {
 
         <div className="space-y-8">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight gradient-text pb-1">New Migration: Xero to MYOB</h1>
+            <h1 className="text-3xl font-bold tracking-tight gradient-text pb-1">New Migration: NetSuite to Xero + Gojee</h1>
             <p className="text-muted-foreground mt-1">
               Review the suggested mapping — every field, account and rule can be remapped to your preference
             </p>
           </div>
 
-          <div className="space-y-3">
-            <div className="flex justify-between text-xs font-semibold tracking-wide uppercase text-muted-foreground">
-              <div>Migration Progress</div>
-              <div className="text-primary font-bold">60%</div>
-            </div>
-            <div className="relative h-2 w-full overflow-hidden rounded-full bg-secondary">
-              <div
-                className="absolute inset-0 opacity-20 blur-sm rounded-full bg-primary transition-all duration-500"
-                style={{ width: `${mounted ? 60 : 0}%` }}
-              ></div>
-              <div
-                className="absolute inset-0 rounded-full journey-gradient-bg transition-all duration-500"
-                style={{ width: `${mounted ? 60 : 0}%` }}
-              ></div>
-              <div
-                className="absolute inset-0 rounded-full bg-gradient-to-r from-transparent via-white/20 to-transparent shine-animation"
-                style={{ width: `${mounted ? 60 : 0}%` }}
-              ></div>
-              <div className="absolute inset-0 flex">
-                {[20, 40, 60, 80].map((segment) => (
-                  <div key={segment} className="h-full flex-1 border-r border-background/20" aria-hidden="true" />
-                ))}
-              </div>
-            </div>
-          </div>
-
-          {/* Step navigation */}
-          <div className="relative flex justify-between border-b border-border/40 pb-6">
-            <div
-              className="absolute left-0 bottom-0 h-0.5 bg-primary transition-all duration-500"
-              style={{ width: `50%` }}
-            ></div>
-            {[
-              { icon: <Database className="h-5 w-5" />, label: "Connect" },
-              { icon: <FileText className="h-5 w-5" />, label: "Extract" },
-              { icon: <Map className="h-5 w-5" />, label: "Map" },
-              { icon: <CheckSquare className="h-5 w-5" />, label: "Validate" },
-              { icon: <Upload className="h-5 w-5" />, label: "Import" },
-            ].map((step, index) => {
-              const stepNum = index + 1
-              const isActive = stepNum === 3
-              const isCompleted = stepNum < 3
-              return (
-                <Button
-                  key={index}
-                  variant="ghost"
-                  className={`flex flex-col items-center gap-2 rounded-xl px-4 py-2 transition-all duration-300 h-auto ${
-                    isActive ? "text-primary font-semibold" : isCompleted ? "text-primary/80" : "text-muted-foreground"
-                  } ${stepNum > 3 ? "opacity-50 cursor-not-allowed" : "hover:bg-primary/5 hover:text-primary"}`}
-                  disabled={stepNum > 3}
-                  onClick={() => {
-                    if (stepNum === 1) router.push(`/dashboard/new-migration/connect?destination=${destination}`)
-                    else if (stepNum === 2) handlePrevStep()
-                  }}
-                >
-                  <div
-                    className={`flex h-11 w-11 items-center justify-center rounded-2xl border transition-all duration-300 shadow-sm ${
-                      isActive
-                        ? "border-primary bg-primary/10 text-primary shadow-inner"
-                        : isCompleted
-                          ? "border-primary/30 bg-primary/5 text-primary"
-                          : "border-border/60 bg-card"
-                    }`}
-                  >
-                    {isCompleted ? <CheckCircle className="h-5 w-5 text-primary" /> : step.icon}
-                  </div>
-                  <span className="text-xs font-medium mt-1">{step.label}</span>
-                </Button>
-              )
-            })}
-          </div>
+          <MigrationStepper step={3} />
 
           <Card className="google-card bg-card/65 backdrop-blur-md shadow-sm border border-border/50 overflow-hidden relative">
             <div className="absolute top-0 right-0 w-32 h-32 bg-primary/5 rounded-bl-[100px] -z-10"></div>
@@ -995,9 +903,9 @@ export default function MapData() {
                       </h3>
                       <div className="space-y-1">
                         <div className="grid grid-cols-12 gap-3 border-b border-border/30 pb-3 font-semibold text-xs uppercase tracking-wider text-muted-foreground">
-                          <div className="col-span-4">Xero Field</div>
+                          <div className="col-span-4">NetSuite Field</div>
                           <div className="col-span-1"></div>
-                          <div className="col-span-5">MYOB Field</div>
+                          <div className="col-span-5">{DEST_NAME[cat.dest]} Field</div>
                           <div className="col-span-2 text-right">Status</div>
                         </div>
 
@@ -1029,7 +937,7 @@ export default function MapData() {
                             >
                               <div className="col-span-4 flex items-center min-w-0">
                                 <div className="mr-2.5 h-1.5 w-1.5 shrink-0 rounded-full bg-brand-teal"></div>
-                                <span className="truncate font-medium text-foreground">{field.xero}</span>
+                                <span className="truncate font-medium text-foreground">{field.source}</span>
                               </div>
                               <div className="col-span-1 flex justify-center">
                                 <MoveRight className="h-4 w-4 text-muted-foreground/50" />
@@ -1038,7 +946,7 @@ export default function MapData() {
                                 <MappingSelect
                                   value={value}
                                   review={state === "review"}
-                                  placeholder="Select MYOB field…"
+                                  placeholder={`Select ${DEST_NAME[cat.dest]} field…`}
                                   onChange={(v) =>
                                     setOverride(fieldOverrides, setFieldOverrides, key, v, field.suggested)
                                   }
@@ -1078,21 +986,21 @@ export default function MapData() {
                           Account Remapping
                         </h3>
                         <p className="mb-6 text-xs text-muted-foreground">
-                          Choose the MYOB account each Xero account will migrate into — the treatment below updates
+                          Choose the Xero account each NetSuite account will migrate into — the treatment below updates
                           with your selection
                         </p>
                         <div className="space-y-1">
                           <div className="grid grid-cols-12 gap-3 border-b border-border/30 pb-3 font-semibold text-xs uppercase tracking-wider text-muted-foreground">
-                            <div className="col-span-4">Xero Account</div>
+                            <div className="col-span-4">NetSuite Account</div>
                             <div className="col-span-1"></div>
-                            <div className="col-span-5">MYOB Account</div>
+                            <div className="col-span-5">Xero Account</div>
                             <div className="col-span-2 text-right">Status</div>
                           </div>
 
-                          {XERO_ACCOUNTS.map((account, index) => {
+                          {SOURCE_ACCOUNTS.map((account, index) => {
                             const override = accountOverrides[account.code]
                             const value = override ?? account.suggested
-                            const target = value ? myobAccount(value) : undefined
+                            const target = value ? targetAccount(value) : undefined
                             const isCustom = Boolean(override)
                             const state = isCustom ? "custom" : account.needsReview ? "review" : "auto"
                             return (
@@ -1125,7 +1033,7 @@ export default function MapData() {
                                       value={value}
                                       review={state === "review"}
                                       tall
-                                      placeholder="Choose MYOB account…"
+                                      placeholder="Choose Xero account…"
                                       onChange={(v) =>
                                         setOverride(
                                           accountOverrides,
@@ -1137,7 +1045,7 @@ export default function MapData() {
                                       }
                                       groups={ACCOUNT_TYPE_ORDER.map((type) => ({
                                         label: type,
-                                        options: MYOB_ACCOUNTS.filter((a) => a.type === type).map((a) => ({
+                                        options: TARGET_ACCOUNTS.filter((a) => a.type === type).map((a) => ({
                                           value: a.code,
                                           label: `${a.code} · ${a.name}${a.code === account.suggested ? " (suggested)" : ""}`,
                                         })),
@@ -1166,14 +1074,14 @@ export default function MapData() {
                                     key={value}
                                     className="animate-google-fade-in mt-1.5 ml-[37px] text-[11px] text-muted-foreground"
                                   >
-                                    Treated in MYOB as{" "}
+                                    Treated in Xero as{" "}
                                     <span className="font-semibold text-primary">{target.type}</span> · Tax code:{" "}
                                     <span className="font-semibold text-primary">{target.tax}</span>
                                   </div>
                                 ) : (
                                   <div className="mt-1.5 ml-[37px] flex items-center gap-1.5 text-[11px] font-medium text-amber-600">
                                     <AlertTriangle className="h-3 w-3" />
-                                    AI couldn&apos;t match this account — choose the MYOB account it should migrate
+                                    AI couldn&apos;t match this account — choose the Xero account it should migrate
                                     into
                                   </div>
                                 )}
@@ -1191,10 +1099,10 @@ export default function MapData() {
                     >
                       <h3 className="mb-1 text-base font-semibold flex items-center text-foreground">
                         <Settings2 className="mr-2.5 h-5 w-5 text-primary" />
-                        How MYOB Will Treat {cat.label}
+                        How {DEST_NAME[cat.dest]} Will Treat {cat.label}
                       </h3>
                       <p className="mb-6 text-xs text-muted-foreground">
-                        Behavior applied during import — change any rule to control the outcome in MYOB
+                        Behavior applied during import — change any rule to control the outcome in {DEST_NAME[cat.dest]}
                       </p>
                       <div className="space-y-4">
                         {cat.rules.map((rule, index) => {
@@ -1266,33 +1174,14 @@ export default function MapData() {
                     {totalCustom === 1 ? "" : "s"} will be applied during import
                   </span>
                 ) : null}
-                <Button
-                  onClick={handleNextStep}
-                  disabled={totalReview > 0}
-                  className="google-button-primary disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  Continue to Validation <ArrowRight className="ml-2 h-4 w-4" />
-                </Button>
+                <NextButton to="Validate" onClick={handleNextStep} disabled={totalReview > 0} />
               </div>
             </CardFooter>
           </Card>
         </div>
       </div>
 
-      <style jsx global>{`
-        @keyframes shine {
-          0% {
-            transform: translateX(-100%);
-          }
-          100% {
-            transform: translateX(100%);
-          }
-        }
 
-        .shine-animation {
-          animation: shine 2s infinite;
-        }
-      `}</style>
     </div>
   )
 }

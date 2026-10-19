@@ -4,106 +4,66 @@
 
 @layer base {
   :root {
-    /* MYOB brand palette — purple → magenta, with Xero teal as the "source" color */
+    /* Gojee brand palette, sampled from the official Gojee login page:
+       navy #003c64 / #00263e, mint #a8d4b9. NetSuite teal-navy is the "source" colour. */
     --background: 0 0% 100%;
-    --foreground: 270 20% 12%;
+    --foreground: 203 60% 14%;
 
     --card: 0 0% 100%;
-    --card-foreground: 270 20% 12%;
+    --card-foreground: 203 60% 14%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 270 20% 12%;
+    --popover-foreground: 203 60% 14%;
 
-    --primary: 275 100% 34%;
+    --primary: 204 100% 20%;
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 270 30% 96%;
-    --secondary-foreground: 275 40% 22%;
+    --secondary: 142 30% 94%;
+    --secondary-foreground: 204 100% 20%;
 
-    --muted: 270 25% 96%;
-    --muted-foreground: 270 8% 44%;
+    --muted: 204 20% 96%;
+    --muted-foreground: 210 12% 44%;
 
-    --accent: 278 100% 97%;
-    --accent-foreground: 275 100% 34%;
+    --accent: 142 35% 91%;
+    --accent-foreground: 204 100% 20%;
 
     --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 270 20% 90%;
-    --input: 270 20% 96%;
-    --ring: 275 90% 45%;
+    --border: 204 18% 89%;
+    --input: 204 18% 95%;
+    --ring: 204 100% 26%;
 
     --radius: 0.75rem;
 
-    /* Brand anchors: Xero (source) → MYOB purple → MYOB magenta (destination) */
-    --brand-teal: 195 85% 42%;
-    --brand-purple: 275 100% 34%;
-    --brand-violet: 291 84% 42%;
-    --brand-pink: 331 95% 48%;
+    /* Gojee mint, for fills and glows (text uses the darker --brand-pink) */
+    --brand-mint: 142 35% 75%;
+
+    /* Brand anchors: NetSuite teal-navy (source) → Gojee navy → Gojee mint-green (destinations) */
+    --brand-teal: 199 40% 35%;
+    --brand-purple: 204 100% 20%;
+    --brand-violet: 200 70% 30%;
+    --brand-pink: 150 39% 42%;
 
     --sidebar-background: 0 0% 100%;
-    --sidebar-foreground: 270 20% 12%;
-    --sidebar-primary: 275 100% 34%;
+    --sidebar-foreground: 203 60% 14%;
+    --sidebar-primary: 204 100% 20%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 270 30% 96%;
-    --sidebar-accent-foreground: 270 20% 12%;
-    --sidebar-border: 270 20% 90%;
-    --sidebar-ring: 275 90% 45%;
+    --sidebar-accent: 142 30% 94%;
+    --sidebar-accent-foreground: 203 60% 14%;
+    --sidebar-border: 204 18% 89%;
+    --sidebar-ring: 204 100% 26%;
 
-    --chart-1: 275 100% 40%;
-    --chart-2: 195 85% 42%;
-    --chart-3: 331 95% 48%;
-    --chart-4: 142 70% 40%;
-    --chart-5: 25 95% 53%;
+    --chart-1: 204 100% 26%;
+    --chart-2: 196 84% 45%;
+    --chart-3: 199 40% 35%;
+    --chart-4: 150 39% 42%;
+    --chart-5: 34 94% 52%;
 
     /* Motion system — Material 3 emphasized easing + spring */
     --ease-emphasized: cubic-bezier(0.2, 0, 0, 1);
     --ease-decelerate: cubic-bezier(0.05, 0.7, 0.1, 1);
     --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
-  }
-
-  .dark {
-    --background: 270 30% 6%;
-    --foreground: 270 20% 96%;
-
-    --card: 270 25% 9%;
-    --card-foreground: 270 20% 96%;
-
-    --popover: 270 25% 9%;
-    --popover-foreground: 270 20% 96%;
-
-    --primary: 275 95% 68%;
-    --primary-foreground: 275 60% 12%;
-
-    --secondary: 270 20% 14%;
-    --secondary-foreground: 270 20% 92%;
-
-    --muted: 270 20% 13%;
-    --muted-foreground: 270 10% 62%;
-
-    --accent: 275 40% 17%;
-    --accent-foreground: 275 90% 80%;
-
-    --destructive: 0 63% 40%;
-    --destructive-foreground: 0 0% 98%;
-
-    --border: 270 18% 18%;
-    --input: 270 18% 18%;
-    --ring: 275 95% 68%;
-
-    --brand-teal: 195 85% 55%;
-    --brand-purple: 275 95% 68%;
-    --brand-violet: 291 80% 62%;
-    --brand-pink: 331 90% 62%;
-
-    --sidebar-background: 270 30% 6%;
-    --sidebar-foreground: 270 20% 96%;
-    --sidebar-primary: 275 95% 68%;
-    --sidebar-primary-foreground: 275 60% 12%;
-    --sidebar-accent: 270 20% 14%;
-    --sidebar-accent-foreground: 270 20% 96%;
-    --sidebar-border: 270 18% 18%;
-    --sidebar-ring: 275 95% 68%;
   }
 }
 
@@ -113,6 +73,10 @@
   }
   body {
     @apply bg-background text-foreground font-sans antialiased;
+    background-image:
+      radial-gradient(1100px 500px at 100% -10%, hsl(var(--brand-mint) / 0.18), transparent 60%),
+      radial-gradient(800px 400px at -10% 110%, hsl(var(--primary) / 0.06), transparent 60%);
+    background-attachment: fixed;
     scroll-behavior: smooth;
     text-rendering: optimizeLegibility;
     -webkit-font-smoothing: antialiased;
@@ -122,7 +86,32 @@
 
 @layer components {
   .google-card {
-    @apply bg-card border border-border/50 rounded-2xl p-6 shadow-sm hover:shadow-md transition-all duration-300 hover:border-border;
+    @apply bg-card border border-border/50 rounded-2xl p-6 transition-all duration-300 hover:border-border;
+    box-shadow:
+      0 1px 2px hsl(var(--primary) / 0.05),
+      0 10px 30px -16px hsl(var(--primary) / 0.18);
+  }
+  .google-card:hover {
+    box-shadow:
+      0 1px 2px hsl(var(--primary) / 0.06),
+      0 16px 36px -16px hsl(var(--primary) / 0.22);
+  }
+
+  /* Tables inside cards: soft navy header, mint-tinted hover */
+  .google-card thead tr {
+    background: hsl(var(--primary) / 0.05);
+  }
+  .google-card thead th {
+    @apply text-[11px] uppercase tracking-wider text-muted-foreground;
+  }
+  .google-card tbody tr:hover {
+    background: hsl(var(--brand-mint) / 0.18);
+  }
+
+  /* Mint pill used for "done" states */
+  .mint-pill {
+    background: hsl(var(--brand-mint) / 0.35);
+    color: hsl(var(--primary));
   }
 
   .google-button-primary {
@@ -141,7 +130,7 @@
     @apply bg-card/50 backdrop-blur-sm border border-border/30 rounded-2xl;
   }
 
-  /* Brand gradients — MYOB purple → magenta */
+  /* Brand gradients — Gojee navy → mint-green */
   .gradient-text {
     background-image: linear-gradient(
       90deg,
@@ -160,7 +149,7 @@
     background-image: linear-gradient(135deg, hsl(var(--brand-purple)), hsl(var(--brand-pink)));
   }
 
-  /* Full migration journey: Xero teal → MYOB purple → MYOB magenta */
+  /* Full migration journey: NetSuite teal → Gojee navy → Gojee mint */
   .journey-gradient-bg {
     background-image: linear-gradient(
       90deg,
@@ -188,12 +177,15 @@
     background-image: linear-gradient(
       115deg,
       hsl(var(--brand-purple)),
-      hsl(var(--brand-violet)) 55%,
-      hsl(var(--brand-pink))
+      hsl(var(--brand-violet)) 60%,
+      hsl(var(--brand-purple))
     );
     background-size: 160% auto;
     background-position: left center;
-    box-shadow: 0 4px 20px -4px hsl(var(--brand-purple) / 0.45);
+    box-shadow:
+      0 4px 20px -4px hsl(var(--brand-purple) / 0.45),
+      0 0 0 0 hsl(var(--brand-mint) / 0.6);
+    animation: mint-breathe 2.6s ease-in-out infinite;
     transition:
       transform 0.25s var(--ease-emphasized),
       box-shadow 0.25s var(--ease-emphasized),
@@ -202,7 +194,14 @@
   .premium-button:hover {
     transform: translateY(-2px);
     background-position: right center;
-    box-shadow: 0 12px 32px -8px hsl(var(--brand-purple) / 0.55);
+    box-shadow:
+      0 12px 32px -8px hsl(var(--brand-purple) / 0.55),
+      0 0 0 4px hsl(var(--brand-mint) / 0.5);
+    animation: none;
+  }
+  .premium-button:disabled {
+    animation: none;
+    box-shadow: none;
   }
   .premium-button:active {
     transform: translateY(0) scale(0.98);
@@ -260,6 +259,43 @@
 /* ---------------------------------------------------------------------------
    Motion system
 --------------------------------------------------------------------------- */
+
+/* Soft mint halo that breathes around the primary action */
+@keyframes mint-breathe {
+  0%,
+  100% {
+    box-shadow:
+      0 4px 20px -4px hsl(var(--brand-purple) / 0.45),
+      0 0 0 0 hsl(var(--brand-mint) / 0.55);
+  }
+  50% {
+    box-shadow:
+      0 6px 24px -4px hsl(var(--brand-purple) / 0.5),
+      0 0 0 6px hsl(var(--brand-mint) / 0);
+  }
+}
+
+@keyframes check-pop {
+  0% {
+    transform: scale(0.6);
+    opacity: 0;
+  }
+  70% {
+    transform: scale(1.12);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+.check-pop {
+  animation: check-pop 0.45s var(--ease-spring) both;
+}
+
+::selection {
+  background: hsl(var(--brand-mint) / 0.6);
+  color: hsl(var(--primary));
+}
 
 @keyframes google-fade-in {
   from {
@@ -402,7 +438,7 @@
   }
 }
 
-/* Data packets travelling Xero → MYOB in the hero */
+/* Data packets travelling along the migration path */
 @keyframes data-flow {
   0% {
     left: 0%;

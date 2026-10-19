@@ -20,177 +20,115 @@ import {
   XCircle,
 } from "lucide-react"
 import { ModuleComparisonModal } from "./module-comparison-modal"
+import { categories, sampleRows } from "@/lib/demo-data/migration"
+import { SUBSIDIARY_BY_ID, XERO_ORG_BY_ID } from "@/lib/demo-data/momento"
+import { useDemo } from "@/lib/demo-store"
+import { LAST_CLOSED_PERIOD, formatDate, lastDayOfPeriod, periodFromDate, periodLabel, periodsInScope, tbIssuePeriod } from "@/lib/periods"
 
-const tabData = {
-  accounts: {
-    title: "Chart of Accounts",
-    headers: ["Account Code", "Account Name", "Type", "Status"],
-    rows: [
-      ["1000", "Sales Revenue", "Revenue", "Imported"],
-      ["2000", "Cost of Goods Sold", "Expense", "Imported"],
-      ["3000", "Accounts Receivable", "Asset", "Imported"],
-      ["4000", "Accounts Payable", "Liability", "Imported"],
-      ["6200", "Travel Expenses", "Expense", "Imported"],
-    ]
-  },
-  customers: {
-    title: "Customers",
-    headers: ["Name", "Email", "Phone", "Status"],
-    rows: [
-      ["Amazon", "amazon@gmail.com", "078 6565 1529", "Imported"],
-      ["Azure Training", "info@azure.com", "+44 20 1234 5678", "Imported"],
-      ["DIRECTOR", "director@abc.com", "+44 20 9876 5432", "Imported"],
-      ["EE LIMITED", "accounts@ee.com", "+44 20 1111 2222", "Imported"],
-    ]
-  },
-  vendors: {
-    title: "Vendors",
-    headers: ["Name", "Email", "Phone", "Status"],
-    rows: [
-      ["Office Supplies Ltd", "accounts@officesupplies.com", "+44 20 3333 4444", "Imported"],
-      ["Tech Solutions Inc", "billing@techsolutions.com", "+44 20 5555 6666", "Imported"],
-      ["Marketing Agency", "invoices@marketing.com", "+44 20 7777 8888", "Imported"],
-      ["Legal Services", "admin@legalservices.com", "+44 20 9999 0000", "Imported"],
-    ]
-  },
-  items: {
-    title: "Items",
-    headers: ["Item Code", "Item Name", "Type", "Status"],
-    rows: [
-      ["CONS-001", "Consulting Services", "Service", "Imported"],
-      ["SOFT-001", "Software License", "Service", "Imported"],
-      ["TRAIN-001", "Training Workshop", "Service", "Imported"],
-      ["MAINT-001", "Maintenance Contract", "Service", "Imported"],
-    ]
-  },
-  invoices: {
-    title: "Invoices",
-    headers: ["Invoice #", "Customer", "Date", "Amount", "Status"],
-    rows: [
-      ["INV-2024-001", "Amazon", "09/07/2026", "£2,500.00", "Imported"],
-      ["INV-2024-002", "Azure Training", "09/07/2026", "£1,850.00", "Imported"],
-      ["INV-2024-003", "DIRECTOR", "09/07/2026", "£3,200.00", "Imported"],
-      ["INV-2024-004", "EE LIMITED", "09/07/2026", "£1,750.00", "Imported"],
-    ]
-  },
-  bills: {
-    title: "Bills",
-    headers: ["Bill #", "Vendor", "Date", "Amount", "Status"],
-    rows: [
-      ["BILL-2024-001", "Office Supplies Ltd", "09/07/2026", "£450.00", "Imported"],
-      ["BILL-2024-002", "Tech Solutions Inc", "09/07/2026", "£1,200.00", "Imported"],
-      ["BILL-2024-003", "Marketing Agency", "09/07/2026", "£850.00", "Imported"],
-      ["BILL-2024-004", "Legal Services", "09/07/2026", "£2,100.00", "Imported"],
-    ]
-  },
-  invoicePayments: {
-    title: "Invoice Payments",
-    headers: ["Payment #", "Invoice", "Date", "Amount", "Status"],
-    rows: [
-      ["PAY-2024-001", "INV-2024-001", "09/07/2026", "£2,500.00", "Imported"],
-      ["PAY-2024-002", "INV-2024-002", "09/07/2026", "£1,850.00", "Imported"],
-      ["PAY-2024-003", "INV-2024-003", "09/07/2026", "£3,200.00", "Imported"],
-      ["PAY-2024-004", "INV-2024-004", "09/07/2026", "£1,750.00", "Imported"],
-    ]
-  },
-  billPayments: {
-    title: "Bill Payments",
-    headers: ["Payment #", "Bill", "Date", "Amount", "Status"],
-    rows: [
-      ["BPAY-2024-001", "BILL-2024-001", "09/07/2026", "£450.00", "Imported"],
-      ["BPAY-2024-002", "BILL-2024-002", "09/07/2026", "£1,200.00", "Imported"],
-      ["BPAY-2024-003", "BILL-2024-003", "09/07/2026", "£850.00", "Imported"],
-      ["BPAY-2024-004", "BILL-2024-004", "09/07/2026", "£2,100.00", "Imported"],
-    ]
-  },
-  creditNotes: {
-    title: "Credit Notes",
-    headers: ["Credit Note #", "Customer", "Date", "Amount", "Status"],
-    rows: [
-      ["CN-2024-001", "Amazon", "09/07/2026", "£150.00", "Imported"],
-      ["CN-2024-002", "Azure Training", "09/07/2026", "£75.00", "Imported"],
-      ["CN-2024-003", "EE LIMITED", "09/07/2026", "£200.00", "Imported"],
-    ]
-  },
-  billCredits: {
-    title: "Bill Credits",
-    headers: ["Credit #", "Bill", "Date", "Amount", "Status"],
-    rows: [
-      ["BC-2024-001", "BILL-2024-001", "09/07/2026", "£50.00", "Imported"],
-      ["BC-2024-002", "BILL-2024-003", "09/07/2026", "£100.00", "Imported"],
-    ]
-  },
-  journals: {
-    title: "Journals",
-    headers: ["Journal #", "Date", "Description", "Status"],
-    rows: [
-      ["JE-2024-001", "09/07/2026", "Month-end accruals", "Imported"],
-      ["JE-2024-002", "09/07/2026", "Depreciation adjustment", "Imported"],
-      ["JE-2024-003", "09/07/2026", "Bank reconciliation", "Imported"],
-      ["JE-2024-004", "09/07/2026", "Tax provision", "Imported"],
-    ]
-  },
-  salesOrders: {
-    title: "Sales Orders",
-    headers: ["Order #", "Customer", "Date", "Amount", "Status"],
-    rows: [
-      ["SO-2024-001", "Amazon", "09/07/2026", "£1,250.00", "Imported"],
-      ["SO-2024-002", "Azure Training", "09/07/2026", "£950.00", "Imported"],
-      ["SO-2024-003", "DIRECTOR", "09/07/2026", "£4,100.00", "Imported"],
-    ]
-  },
-  purchaseOrders: {
-    title: "Purchase Orders",
-    headers: ["Order #", "Vendor", "Date", "Amount", "Status"],
-    rows: [
-      ["PO-2024-001", "Office Supplies Ltd", "09/07/2026", "£320.00", "Imported"],
-      ["PO-2024-002", "Tech Solutions Inc", "09/07/2026", "£1,500.00", "Imported"],
-      ["PO-2024-003", "Marketing Agency", "09/07/2026", "£600.00", "Imported"],
-    ]
-  },
-  attachments: {
-    title: "Attachments",
-    headers: ["File Name", "Size", "Type", "Linked To", "Status"],
-    rows: [
-      ["signed-contract.pdf", "1.2 MB", "PDF", "INV-2024-001", "Imported"],
-      ["receipt-office.png", "340 KB", "PNG", "BILL-2024-001", "Imported"],
-      ["invoice-details.docx", "850 KB", "DOCX", "INV-2024-003", "Imported"],
-      ["product-spec.xlsx", "2.1 MB", "XLSX", "SO-2024-001", "Imported"],
-    ]
-  }
+const TAB_ORDER = [
+  "summary",
+  "accounts",
+  "customers",
+  "vendors",
+  "items",
+  "invoices",
+  "bills",
+  "creditNotes",
+  "billCredits",
+  "invoicePayments",
+  "billPayments",
+  "bank",
+  "journals",
+  "inventoryJournals",
+  "stock",
+  "jobs",
+  "jobTasks",
+  "jobTemplates",
+  "jobBudgets",
+  "jobCostRevenue",
+  "retention",
+  "purchaseOrders",
+  "timesheets",
+  "schedule",
+  "staff",
+  "billingRates",
+  "warnings",
+]
+
+const TAB_LABEL: Record<string, string> = {
+  summary: "Summary",
+  accounts: "Chart of Accounts",
+  customers: "Customers",
+  vendors: "Suppliers",
+  items: "Items",
+  invoices: "Invoices",
+  bills: "Bills",
+  creditNotes: "Credit Notes",
+  billCredits: "Bill Credits",
+  invoicePayments: "Invoice Payments",
+  billPayments: "Bill Payments",
+  bank: "Bank",
+  journals: "Journals",
+  inventoryJournals: "Inventory Journals",
+  stock: "Gojee · Stock",
+  jobs: "Gojee · Jobs & WIP",
+  jobTasks: "Gojee · Tasks",
+  jobTemplates: "Gojee · Templates",
+  jobBudgets: "Gojee · Budgets",
+  jobCostRevenue: "Gojee · Cost & Revenue",
+  retention: "Gojee · Retention",
+  purchaseOrders: "Gojee · Purchase Orders",
+  timesheets: "Gojee · Timesheets",
+  schedule: "Gojee · Schedule",
+  staff: "Gojee · Staff",
+  billingRates: "Gojee · Billing Rates",
+  warnings: "Warnings",
 }
 
 const comparativeReports = [
   {
-    key: "trialBalance",
+    key: "trial-balance",
     title: "Comparative Trial Balance",
-    body: "Compare your trial balance between Xero and MYOB to ensure financial data consistency.",
-    tile: "bg-gradient-to-br from-sky-500 to-cyan-400",
+    body: "Compare your trial balance between NetSuite and Xero, account by account, for every period.",
+    tile: "journey-gradient-bg",
   },
   {
-    key: "agedReceivable",
+    key: "aged-receivable",
     title: "Comparative Aged Receivable",
-    body: "Compare customer outstanding balances between Xero and MYOB systems.",
-    tile: "bg-gradient-to-br from-purple-700 to-violet-500",
+    body: "Compare customer outstanding balances between NetSuite and Xero at cutover.",
+    tile: "gradient-bg",
   },
   {
-    key: "agedPayable",
+    key: "aged-payable",
     title: "Comparative Aged Payable",
-    body: "Compare supplier outstanding balances between Xero and MYOB systems.",
-    tile: "bg-gradient-to-br from-fuchsia-600 to-pink-500",
+    body: "Compare supplier outstanding balances between NetSuite and Xero at cutover.",
+    tile: "bg-[hsl(var(--brand-teal))]",
+  },
+  {
+    key: "inventory",
+    title: "Comparative Inventory",
+    body: "Compare stock quantities and values: NetSuite, Gojee, and Xero's inventory account.",
+    tile: "bg-primary",
+  },
+  {
+    key: "jobs-wip",
+    title: "Comparative Jobs & WIP",
+    body: "Compare open jobs, cost and billed to date, WIP and retention between NetSuite and Gojee.",
+    tile: "bg-[hsl(var(--brand-pink))]",
   },
 ]
 
 const RING_CIRCUMFERENCE = 2 * Math.PI * 52
 
 export default function MigrationReport() {
+  const { state } = useDemo()
+  const subId = state.netsuite.subsidiaryId
+  const fromPeriod = periodFromDate(state.fromDate)
+  const issuePeriod = tbIssuePeriod(fromPeriod)
+  const tabData = sampleRows(subId)
   const [activeTab, setActiveTab] = useState("summary")
   const [ringDrawn, setRingDrawn] = useState(false)
-  const [isDownloading, setIsDownloading] = useState<Record<string, boolean>>({
-    trialBalance: false,
-    agedReceivable: false,
-    agedPayable: false,
-  })
+  const [isDownloading, setIsDownloading] = useState<Record<string, boolean>>({})
 
   const [startTime, setStartTime] = useState("")
   const [endTime, setEndTime] = useState("")
@@ -214,58 +152,20 @@ export default function MigrationReport() {
     warnings: { id: number; category: string; message: string }[]
     errors: { id: number; category: string; message: string }[]
   } = {
-    completed: {
-      "Chart of Accounts": 156,
-      Customers: 85,
-      Vendors: 42,
-      Items: 65,
-      "Sales Orders": 123,
-      "Purchase Orders": 89,
-      Invoices: 215,
-      Bills: 178,
-      "Invoice Payments": 142,
-      "Bill Payments": 89,
-      "Credit Notes": 23,
-      "Bill Credits": 15,
-      Journals: 62,
-      Attachments: 284,
-    },
-    total: {
-      "Chart of Accounts": 156,
-      Customers: 87,
-      Vendors: 42,
-      Items: 65,
-      "Sales Orders": 124,
-      "Purchase Orders": 89,
-      Invoices: 215,
-      Bills: 178,
-      "Invoice Payments": 142,
-      "Bill Payments": 89,
-      "Credit Notes": 23,
-      "Bill Credits": 15,
-      Journals: 62,
-      Attachments: 284,
-    },
+    completed: Object.fromEntries(categories(subId, fromPeriod).map((c) => [c.label, c.count])),
+    total: Object.fromEntries(categories(subId, fromPeriod).map((c) => [c.label, c.count])),
     warnings: [
-      {
-        id: 1,
-        category: "Customers",
-        message: "Missing phone number for customer 'ABC Corporation'. A placeholder has been used.",
-      },
-      {
-        id: 2,
-        category: "Customers",
-        message: "Incomplete address for customer 'XYZ Ltd'. Only partial address was imported.",
-      },
+      { id: 1, category: "Customers", message: "2 customers had no email address. A placeholder contact email was used." },
+      { id: 2, category: "Bills", message: "1 bill in USD kept NetSuite's exchange rate (1.5234). USD is enabled in the Xero org." },
       {
         id: 3,
-        category: "Invoice Payments",
-        message: "Payment method mapping was ambiguous. Default payment method was applied.",
+        category: "Journals",
+        message: "Journal JE-HIL-2211 had a line in another subsidiary. It was balanced on intercompany loan account 1810-MHG.",
       },
       {
         id: 4,
-        category: "Sales Orders",
-        message: "Sales order 'SO-2026-0043' maps to a customer with missing contact details. Defaulting to customer record.",
+        category: "Trial balance",
+        message: `${periodLabel(issuePeriod)} GST rounding difference of $12.40 was posted to Rounding (860) during validation. All periods now match NetSuite.`,
       },
     ],
     errors: [],
@@ -277,27 +177,9 @@ export default function MigrationReport() {
   const successRateLabel = successRate.toFixed(1)
 
   const handleViewReport = (reportType: string) => {
-    try {
-      setIsDownloading({ ...isDownloading, [reportType]: true })
-
-      const fileMap: Record<string, string> = {
-        trialBalance: "Comparative-Trial-Balance",
-        agedReceivable: "Comparative-Aged-Receivable",
-        agedPayable: "Comparative-Aged-Payable",
-      }
-
-      const fileName = fileMap[reportType]
-      if (!fileName) {
-        throw new Error(`Unknown report type: ${reportType}`)
-      }
-
-      window.open(`/reports/${fileName}.html`, "_blank")
-    } catch (error) {
-      console.error(`Error opening report:`, error)
-      alert(`Error opening report. Please try again.`)
-    } finally {
-      setIsDownloading({ ...isDownloading, [reportType]: false })
-    }
+    setIsDownloading((d) => ({ ...d, [reportType]: true }))
+    window.open(`/reports/${reportType}`, "_blank")
+    setTimeout(() => setIsDownloading((d) => ({ ...d, [reportType]: false })), 600)
   }
 
   const stagger = (i: number, base = 0) =>
@@ -307,9 +189,9 @@ export default function MigrationReport() {
     <div className="flex min-h-screen flex-col bg-gradient-to-br from-background via-background to-muted/20">
       <div className="container py-6 max-w-7xl mx-auto px-4 sm:px-6">
         <div className="mb-8 animate-fade-in-up" style={{ animationFillMode: "both" }}>
-          <Link href="/dashboard" className="flex items-center text-sm text-muted-foreground hover:text-foreground transition-colors">
+          <Link href="/dashboard/new-migration/import" className="flex items-center text-sm text-muted-foreground hover:text-foreground transition-colors">
             <ArrowLeft className="mr-2 h-4 w-4" />
-            Back to Dashboard
+            Back to Import
           </Link>
         </div>
 
@@ -332,7 +214,7 @@ export default function MigrationReport() {
                   <h1 className="text-3xl font-extrabold tracking-tight gradient-text pb-1">Migration Report</h1>
                 </div>
                 <p className="text-muted-foreground">
-                  Xero to MYOB migration completed on{" "}
+                  NetSuite to Xero + Gojee migration completed on{" "}
                   {new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })}
                 </p>
                 <div className="flex flex-wrap items-center gap-2 pt-1">
@@ -346,7 +228,7 @@ export default function MigrationReport() {
                     <Layers className="mr-1.5 h-3.5 w-3.5" /> {totalRecords.toLocaleString()} records
                   </span>
                   <span className="inline-flex items-center rounded-full border border-border/60 bg-muted/40 px-3 py-1 text-xs font-medium text-muted-foreground">
-                    <CalendarDays className="mr-1.5 h-3.5 w-3.5" /> 14 data categories
+                    <CalendarDays className="mr-1.5 h-3.5 w-3.5" /> {Object.keys(migrationData.total).length} data categories
                   </span>
                 </div>
               </div>
@@ -356,7 +238,7 @@ export default function MigrationReport() {
                 <svg width="132" height="132" viewBox="0 0 132 132" className="-rotate-90">
                   <defs>
                     <linearGradient id="ringGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-                      <stop offset="0%" stopColor="hsl(var(--brand-purple))" />
+                      <stop offset="0%" stopColor="hsl(var(--brand-teal))" />
                       <stop offset="100%" stopColor="hsl(var(--brand-pink))" />
                     </linearGradient>
                   </defs>
@@ -506,29 +388,13 @@ export default function MigrationReport() {
             <CardContent className="pt-6">
               <Tabs defaultValue="summary" value={activeTab} onValueChange={setActiveTab} className="w-full">
                 <TabsList className="mb-6 flex flex-wrap h-auto gap-1 bg-muted/40 p-1 rounded-xl border border-border/50">
-                  {["summary", "accounts", "customers", "vendors", "items", "salesOrders", "purchaseOrders", "invoices", "bills", "invoicePayments", "billPayments", "creditNotes", "billCredits", "journals", "attachments", "warnings"].map((tab) => (
+                  {TAB_ORDER.map((tab) => (
                     <TabsTrigger
                       key={tab}
                       value={tab}
                       className="rounded-lg px-3 py-1.5 text-xs font-medium capitalize transition-all duration-200 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-md"
                     >
-                      {tab === "invoicePayments"
-                        ? "Invoice Payments"
-                        : tab === "billPayments"
-                          ? "Bill Payments"
-                          : tab === "creditNotes"
-                            ? "Credit Notes"
-                            : tab === "billCredits"
-                              ? "Bill Credits"
-                              : tab === "accounts"
-                                ? "Chart of Accounts"
-                                : tab === "salesOrders"
-                                  ? "Sales Orders"
-                                  : tab === "purchaseOrders"
-                                    ? "Purchase Orders"
-                                    : tab === "attachments"
-                                      ? "Attachments"
-                                      : tab}
+                      {TAB_LABEL[tab] ?? tab}
                     </TabsTrigger>
                   ))}
                 </TabsList>
@@ -538,12 +404,15 @@ export default function MigrationReport() {
                     <h3 className="mb-4 text-base font-semibold text-foreground">Migration Overview</h3>
                     <div className="space-y-3">
                       {[
-                        ["Migration ID", <span key="id" className="font-mono">MIG-{new Date().toISOString().slice(0, 10).replace(/-/g, "")}-001</span>],
+                        ["Migration ID", <span key="id" className="font-mono">MIG-2026-0142</span>],
                         ["Start Time", startTime],
                         ["End Time", endTime],
                         ["Duration", "3 minutes, 25 seconds"],
-                        ["Source", "Xero (API v3.0)"],
-                        ["Destination", "MYOB (API v2.0)"],
+                        ["Entity", SUBSIDIARY_BY_ID[subId]?.name ?? ""],
+                        ["History migrated", `${formatDate(state.fromDate)} – ${formatDate(lastDayOfPeriod(LAST_CLOSED_PERIOD))} (${periodsInScope(fromPeriod).length} periods)`],
+                        ["Source", "Oracle NetSuite (SuiteQL REST, OAuth 2.0)"],
+                        ["Destinations", "Xero (Accounting API) + Gojee"],
+                        ["Xero organisation", XERO_ORG_BY_ID[state.xero.tenantId]?.name ?? ""],
                       ].map(([label, value], i) => (
                         <div
                           key={i}

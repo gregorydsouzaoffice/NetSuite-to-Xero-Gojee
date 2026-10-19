@@ -1,40 +1,45 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useEffect, useState } from "react"
 import Link from "next/link"
-import { useRouter, useSearchParams } from "next/navigation"
+import { useRouter } from "next/navigation"
+import { AlertTriangle, ArrowLeft, CheckCircle, CheckSquare, Loader2, Shield, Wrench, XCircle } from "lucide-react"
+import DestinationBadge from "@/components/destination-badge"
+import MigrationStepper from "@/components/migration-stepper"
+import NextButton from "@/components/next-button"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card"
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
-import {
-  ArrowLeft,
-  ArrowRight,
-  CheckCircle,
-  Database,
-  FileText,
-  Map,
-  CheckSquare,
-  Upload,
-  AlertTriangle,
-  XCircle,
-  Shield,
-} from "lucide-react"
+import { categories } from "@/lib/demo-data/migration"
+import { SUBSIDIARY_BY_ID } from "@/lib/demo-data/momento"
+import { TB_ISSUE, trialBalance } from "@/lib/demo-data/snapshot"
+import { useDemo } from "@/lib/demo-store"
+import { fmtMoney } from "@/lib/format"
+import { periodFromDate, periodLabel, tbIssuePeriod } from "@/lib/periods"
+
+/** Warnings that don't block the migration (shown like the original Validate step) */
+const WARNINGS: Record<string, { count: number; message: string }> = {
+  customers: { count: 2, message: "2 customers have no email address. A placeholder contact email will be used." },
+  bills: { count: 1, message: "1 bill in USD uses NetSuite's exchange rate of 1.5234 — USD is enabled in the Xero org." },
+  journals: { count: 1, message: "Journal JE-HIL-2211 has a line in another subsidiary; it will be balanced on the intercompany loan account 1810-MHG." },
+  jobs: { count: 1, message: "1 open sales order will be created as a Gojee job (setting on the Map step). WIP is calculated as cost to date − billed to date." },
+  jobTemplates: { count: 1, message: "Job templates are a partial fit — they import only if Gojee supports templates (to be confirmed with Gojee)." },
+  billingRates: { count: 2, message: "2 NetSuite charge rules (weekend uplift, fixed-fee milestones) are simplified to a charge rate per role in Gojee." },
+}
 
 export default function ValidateData() {
   const router = useRouter()
-  const searchParams = useSearchParams()
-  const destination = searchParams.get("destination") || "myob"
-  const [currentStep, setCurrentStep] = useState(4)
-  const [progress, setProgress] = useState(80)
-  const [mounted, setMounted] = useState(false)
+  const { state, update } = useDemo()
+  const subId = state.netsuite.subsidiaryId
+  const fromPeriod = periodFromDate(state.fromDate)
+  const issuePeriod = tbIssuePeriod(fromPeriod)
+  const fixed = state.roundingFixed
   const [validationComplete, setValidationComplete] = useState(false)
   const [validationProgress, setValidationProgress] = useState(0)
+  const [fixing, setFixing] = useState(false)
 
   useEffect(() => {
-    setMounted(true)
-
-    // Simulate validation progress: fast start, jittery decelerating tail —
-    // the way real record-by-record checks behave (never a constant rate)
+    // Fast start, jittery decelerating tail — like real record-by-record checks
     const interval = setInterval(() => {
       setValidationProgress((prev) => {
         if (prev >= 100) {
@@ -47,186 +52,41 @@ export default function ValidateData() {
         return Math.min(100, prev + step)
       })
     }, 120)
-
     return () => clearInterval(interval)
   }, [])
 
-  const handleNextStep = () => {
-    router.push(`/dashboard/new-migration/import?destination=${destination}`)
-  }
-
-  const handlePrevStep = () => {
-    router.push(`/dashboard/new-migration/map?destination=${destination}`)
-  }
-
-  // Get destination software details
-  const getDestinationDetails = () => {
-    const softwareMap = {
-      xero: {
-        name: "Xero",
-        logo: "https://upload.wikimedia.org/wikipedia/en/thumb/5/5c/Xero_software_logo.svg/1200px-Xero_software_logo.svg.png",
-        color: "blue",
-      },
-      quickbooks: {
-        name: "QuickBooks Online",
-        logo: "https://upload.wikimedia.org/wikipedia/commons/thumb/8/86/Intuit_QuickBooks_logo.svg/2560px-Intuit_QuickBooks_logo.svg.png",
-        color: "green",
-      },
-      sage: {
-        name: "Sage",
-        logo: "https://upload.wikimedia.org/wikipedia/commons/thumb/4/44/Sage_Group_logo.svg/2560px-Sage_Group_logo.svg.png",
-        color: "emerald",
-      },
-      "myob": {
-        name: "MYOB",
-        logo: "/images/myob-logo.png",
-        color: "red",
-      },
-      freeagent: {
-        name: "FreeAgent",
-        logo: "https://www.freeagent.com/components/shared/svgs/logo-freeagent.svg",
-        color: "red",
-      },
-      // Add other software details as needed
+  const validationResults = categories(subId, fromPeriod).map((c) => {
+    const w = WARNINGS[c.key]?.count ?? 0
+    const tbError = c.key === "journals" && !fixed
+    return {
+      ...c,
+      valid: c.count,
+      warnings: w,
+      status: tbError ? "error" : w > 0 ? "warning" : "success",
     }
+  })
+  const validationWarnings = Object.entries(WARNINGS).map(([key, w], id) => ({
+    id,
+    category: validationResults.find((r) => r.key === key)?.label ?? key,
+    message: w.message,
+  }))
 
-    return (
-      softwareMap[destination] || {
-        name: "Selected Software",
-        logo: "/placeholder.svg?height=60&width=120",
-        color: "primary",
-      }
-    )
+  const tbRows = trialBalance(subId, issuePeriod, { issue: true, roundingApplied: fixed, issuePeriod }).filter((r) => r.xeroCode === "820" || r.xeroCode === "860")
+
+  const applyFix = () => {
+    setFixing(true)
+    setTimeout(() => {
+      update((s) => ({ ...s, roundingFixed: true }))
+      setFixing(false)
+    }, 1200)
   }
-
-  const destinationDetails = getDestinationDetails()
-
-  // Validation results
-  const validationResults = [
-    {
-      category: "Chart of Accounts",
-      total: 156,
-      valid: 156,
-      warnings: 0,
-      errors: 0,
-      status: "success",
-    },
-    {
-      category: "Customers",
-      total: 87,
-      valid: 85,
-      warnings: 2,
-      errors: 0,
-      status: "warning",
-    },
-    {
-      category: "Suppliers",
-      total: 42,
-      valid: 42,
-      warnings: 0,
-      errors: 0,
-      status: "success",
-    },
-    {
-      category: "Items",
-      total: 65,
-      valid: 64,
-      warnings: 1,
-      errors: 0,
-      status: "warning",
-    },
-    {
-      category: "Sales Orders",
-      total: 124,
-      valid: 123,
-      warnings: 1,
-      errors: 0,
-      status: "warning",
-    },
-    {
-      category: "Purchase Orders",
-      total: 89,
-      valid: 89,
-      warnings: 0,
-      errors: 0,
-      status: "success",
-    },
-    {
-      category: "Invoices",
-      total: 215,
-      valid: 215,
-      warnings: 0,
-      errors: 0,
-      status: "success",
-    },
-    {
-      category: "Bills",
-      total: 178,
-      valid: 178,
-      warnings: 0,
-      errors: 0,
-      status: "success",
-    },
-    {
-      category: "Payments",
-      total: 93,
-      valid: 93,
-      warnings: 0,
-      errors: 0,
-      status: "success",
-    },
-    {
-      category: "Journals",
-      total: 64,
-      valid: 64,
-      warnings: 0,
-      errors: 0,
-      status: "success",
-    },
-    {
-      category: "Attachments",
-      total: 284,
-      valid: 284,
-      warnings: 0,
-      errors: 0,
-      status: "success",
-    },
-  ]
-
-  // Validation warnings
-  const validationWarnings = [
-    {
-      id: 1,
-      category: "Customers",
-      message: "Missing phone number for customer 'ABC Corporation'. A placeholder has been used.",
-      severity: "warning",
-    },
-    {
-      id: 2,
-      category: "Customers",
-      message: "Incomplete address for customer 'XYZ Ltd'. Only partial address was imported.",
-      severity: "warning",
-    },
-    {
-      id: 3,
-      category: "Items",
-      message: "Item code mapping was ambiguous. Default code was applied for 'European Sales'.",
-      severity: "warning",
-    },
-    {
-      id: 4,
-      category: "Sales Orders",
-      message: "Sales order 'SO-2026-0043' maps to a customer with missing contact details. Defaulting to customer record.",
-      severity: "warning",
-    },
-  ]
 
   return (
     <div className="flex min-h-screen flex-col bg-gradient-to-br from-background via-background to-muted/20">
       <div className="container py-8 max-w-5xl mx-auto">
         <div className="mb-8">
           <Link
-            href={`/dashboard/new-migration/map?destination=${destination}`}
+            href="/dashboard/new-migration/map"
             className="flex items-center text-sm text-muted-foreground hover:text-foreground transition-colors group"
           >
             <div className="mr-2 h-8 w-8 rounded-full bg-card border border-border/60 flex items-center justify-center group-hover:border-primary/30 group-hover:bg-primary/5 transition-all shadow-sm">
@@ -238,95 +98,11 @@ export default function ValidateData() {
 
         <div className="space-y-8">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight gradient-text">
-              New Migration: Xero to {destinationDetails.name}
-            </h1>
+            <h1 className="text-3xl font-bold tracking-tight gradient-text">New Migration: NetSuite to Xero + Gojee</h1>
             <p className="text-muted-foreground mt-1">Validate data before migration</p>
           </div>
 
-          <div className="space-y-3">
-            <div className="flex justify-between text-xs font-semibold tracking-wide uppercase text-muted-foreground">
-              <div>Migration Progress</div>
-              <div className="text-primary font-bold">80%</div>
-            </div>
-            <div className="relative h-2 w-full overflow-hidden rounded-full bg-secondary">
-              <div
-                className="absolute inset-0 opacity-20 blur-sm rounded-full bg-primary transition-all duration-500"
-                style={{ width: `${mounted ? 80 : 0}%` }}
-              ></div>
-
-              <div
-                className="absolute inset-0 rounded-full bg-primary transition-all duration-500"
-                style={{ width: `${mounted ? 80 : 0}%` }}
-              ></div>
-
-              {/* Animated shine effect */}
-              <div
-                className="absolute inset-0 rounded-full bg-gradient-to-r from-transparent via-white/20 to-transparent shine-animation"
-                style={{ width: `${mounted ? 80 : 0}%` }}
-              ></div>
-
-              {/* Segmented markers */}
-              <div className="absolute inset-0 flex">
-                {[20, 40, 60, 80].map((segment) => (
-                  <div key={segment} className="h-full flex-1 border-r border-background/20" aria-hidden="true" />
-                ))}
-              </div>
-            </div>
-          </div>
-
-          {/* Step navigation with improved visual styling */}
-          <div className="relative flex justify-between border-b border-border/40 pb-6">
-            <div
-              className="absolute left-0 bottom-0 h-0.5 bg-primary transition-all duration-500"
-              style={{ width: `75%` }}
-            ></div>
-
-            {[
-              { icon: <Database className="h-5 w-5" />, label: "Connect" },
-              { icon: <FileText className="h-5 w-5" />, label: "Extract" },
-              { icon: <Map className="h-5 w-5" />, label: "Map" },
-              { icon: <CheckSquare className="h-5 w-5" />, label: "Validate" },
-              { icon: <Upload className="h-5 w-5" />, label: "Import" },
-            ].map((step, index) => {
-              const stepNum = index + 1
-              const isActive = stepNum === 4
-              const isCompleted = stepNum < 4
-
-              return (
-                <Button
-                  key={index}
-                  variant="ghost"
-                  className={`flex flex-col items-center gap-2 rounded-xl px-4 py-2 transition-all duration-300 h-auto ${
-                    isActive ? "text-primary font-semibold" : isCompleted ? "text-primary/80" : "text-muted-foreground"
-                  } ${stepNum > 4 ? "opacity-50 cursor-not-allowed" : "hover:bg-primary/5 hover:text-primary"}`}
-                  disabled={stepNum > 4}
-                  onClick={() => {
-                    if (stepNum === 1) {
-                      router.push(`/dashboard/new-migration/connect?destination=${destination}`)
-                    } else if (stepNum === 2) {
-                      router.push(`/dashboard/new-migration/extract?destination=${destination}`)
-                    } else if (stepNum === 3) {
-                      handlePrevStep()
-                    }
-                  }}
-                >
-                  <div
-                    className={`flex h-11 w-11 items-center justify-center rounded-2xl border transition-all duration-300 shadow-sm ${
-                      isActive
-                        ? "border-primary bg-primary/10 text-primary shadow-inner"
-                        : isCompleted
-                          ? "border-primary/30 bg-primary/5 text-primary"
-                          : "border-border/60 bg-card"
-                    }`}
-                  >
-                    {isCompleted ? <CheckCircle className="h-5 w-5 text-primary" /> : step.icon}
-                  </div>
-                  <span className="text-xs font-medium mt-1">{step.label}</span>
-                </Button>
-              )
-            })}
-          </div>
+          <MigrationStepper step={4} />
 
           <Card className="google-card bg-card/65 backdrop-blur-md shadow-sm border border-border/50 overflow-hidden relative">
             <div className="absolute top-0 right-0 w-32 h-32 bg-primary/5 rounded-bl-[100px] -z-10"></div>
@@ -335,7 +111,9 @@ export default function ValidateData() {
                 <CheckSquare className="mr-2.5 h-5 w-5 text-primary" />
                 Step 4: Validate Data
               </CardTitle>
-              <CardDescription className="text-muted-foreground mt-1">Validate data before migration to {destinationDetails.name}</CardDescription>
+              <CardDescription className="text-muted-foreground mt-1">
+                {SUBSIDIARY_BY_ID[subId]?.name}: records checked and trial balance compared with NetSuite, period by period
+              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6 pt-2">
               {!validationComplete ? (
@@ -351,7 +129,7 @@ export default function ValidateData() {
                       </div>
                       <div className="text-lg font-medium">Validating your data...</div>
                       <div className="text-sm text-muted-foreground mt-1">
-                        This may take a few moments. We're checking for any potential issues.
+                        Checking every record and comparing the trial balance for each period.
                       </div>
                     </div>
                     <div className="space-y-2">
@@ -365,32 +143,93 @@ export default function ValidateData() {
                 </div>
               ) : (
                 <div className="animate-fade-in-up space-y-6">
+                  {/* The one issue that needs fixing */}
+                  {!fixed ? (
+                    <div className="rounded-2xl border border-red-500/25 bg-red-500/5 backdrop-blur-md p-6">
+                      <div className="flex items-start gap-4">
+                        <div className="h-10 w-10 rounded-xl bg-red-500/10 flex items-center justify-center flex-shrink-0">
+                          <XCircle className="h-5 w-5 text-red-600" />
+                        </div>
+                        <div className="flex-1">
+                          <h3 className="text-base font-semibold text-red-700">
+                            Trial balance differs by ${TB_ISSUE.difference.toFixed(2)} in {periodLabel(issuePeriod)}
+                          </h3>
+                          <p className="text-sm text-red-700/80 mt-1 leading-relaxed">
+                            NetSuite rounded GST per document and posted the difference to its Rounding account. Xero rounds GST per line, so the two
+                            don&apos;t match yet.
+                          </p>
+                          <table className="mt-4 w-full max-w-lg text-sm">
+                            <thead>
+                              <tr className="text-left text-xs uppercase tracking-wider text-muted-foreground">
+                                <th className="py-1.5 font-semibold">Account</th>
+                                <th className="py-1.5 text-right font-semibold">NetSuite</th>
+                                <th className="py-1.5 text-right font-semibold">Xero</th>
+                                <th className="py-1.5 text-right font-semibold">Diff</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {tbRows.map((r) => (
+                                <tr key={r.code} className="border-t border-red-500/10">
+                                  <td className="py-1.5">
+                                    {r.xeroCode} {r.name}
+                                  </td>
+                                  <td className="py-1.5 text-right tabular-nums">{fmtMoney(r.netsuite)}</td>
+                                  <td className="py-1.5 text-right tabular-nums">{fmtMoney(r.xero)}</td>
+                                  <td className="py-1.5 text-right font-semibold tabular-nums text-red-600">{fmtMoney(r.xero - r.netsuite)}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                          <Button onClick={applyFix} disabled={fixing} className="google-button-primary mt-5">
+                            {fixing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Wrench className="mr-2 h-4 w-4" />}
+                            {fixing ? "Posting and re-checking…" : `Fix: post $${TB_ISSUE.difference.toFixed(2)} to Rounding (860)`}
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="animate-fade-in-up rounded-2xl border border-green-500/20 bg-green-500/5 backdrop-blur-md p-5">
+                      <div className="flex items-start gap-4">
+                        <div className="h-10 w-10 rounded-xl bg-green-500/10 flex items-center justify-center flex-shrink-0">
+                          <CheckCircle className="h-5 w-5 text-green-600" />
+                        </div>
+                        <div>
+                          <h3 className="text-base font-semibold text-green-800">Fixed — {periodLabel(issuePeriod)} re-checked: difference 0.00</h3>
+                          <p className="text-sm text-green-800/80 mt-1">
+                            ${TB_ISSUE.difference.toFixed(2)} rounding adjustment posted to the named Rounding account (860). Every period now matches NetSuite.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   <div className="rounded-2xl border border-border/40 bg-card/50 backdrop-blur-md p-6">
                     <h3 className="mb-4 text-base font-semibold flex items-center text-foreground">
                       <Shield className="mr-2.5 h-5 w-5 text-primary" />
                       Validation Results
                     </h3>
                     <div className="space-y-3">
-                      <div className="grid grid-cols-5 gap-4 border-b border-border/30 pb-3 font-semibold text-xs uppercase tracking-wider text-muted-foreground">
+                      <div className="grid grid-cols-6 gap-4 border-b border-border/30 pb-3 font-semibold text-xs uppercase tracking-wider text-muted-foreground">
                         <div className="col-span-2">Category</div>
+                        <div>Destination</div>
                         <div>Records</div>
                         <div>Valid</div>
                         <div className="text-right">Status</div>
                       </div>
-
                       {validationResults.map((result, index) => (
                         <div
-                          key={index}
-                          className="animate-fade-in-up grid grid-cols-5 gap-4 items-center py-3 text-sm border-b border-border/20 last:border-0 hover:bg-muted/5 transition-colors"
+                          key={result.key}
+                          className="animate-fade-in-up grid grid-cols-6 gap-4 items-center py-3 text-sm border-b border-border/20 last:border-0 hover:bg-muted/5 transition-colors"
                           style={{ animationDelay: `${index * 70}ms`, animationFillMode: "both" }}
                         >
-                          <div className="col-span-2 font-medium text-foreground">{result.category}</div>
-                          <div className="text-muted-foreground">{result.total}</div>
-                          <div className="text-foreground">
-                            {result.valid}{" "}
-                            {result.warnings > 0 && (
-                              <span className="text-amber-600 text-xs font-medium">({result.warnings} warnings)</span>
-                            )}
+                          <div className="col-span-2 font-medium text-foreground">{result.label}</div>
+                          <div>
+                            <DestinationBadge system={result.system} />
+                          </div>
+                          <div className="text-muted-foreground tabular-nums">{result.count.toLocaleString()}</div>
+                          <div className="text-foreground tabular-nums">
+                            {result.valid.toLocaleString()}{" "}
+                            {result.warnings > 0 && <span className="text-amber-600 text-xs font-medium">({result.warnings} warnings)</span>}
                           </div>
                           <div className="text-right">
                             {result.status === "success" ? (
@@ -406,7 +245,7 @@ export default function ValidateData() {
                             ) : (
                               <div className="flex items-center justify-end text-red-600 font-medium text-xs">
                                 <XCircle className="h-4 w-4 mr-1 text-red-500" />
-                                Errors
+                                TB difference
                               </div>
                             )}
                           </div>
@@ -415,88 +254,61 @@ export default function ValidateData() {
                     </div>
                   </div>
 
-                  {validationWarnings.length > 0 && (
-                    <div className="rounded-2xl border border-amber-500/20 bg-amber-500/5 backdrop-blur-md p-6">
-                      <h3 className="mb-4 text-base font-semibold flex items-center text-amber-800 dark:text-amber-500">
-                        <AlertTriangle className="mr-2.5 h-5 w-5 text-amber-600" />
-                        Warnings
-                      </h3>
-                      <div className="space-y-4">
-                        {validationWarnings.map((warning) => (
-                          <div
-                            key={warning.id}
-                            className="flex items-start gap-3 border-b border-amber-500/10 pb-3 last:border-0 last:pb-0"
-                          >
-                            <div className="h-6 w-6 rounded-lg bg-amber-500/10 flex items-center justify-center mt-0.5 flex-shrink-0">
-                              <AlertTriangle className="h-3.5 w-3.5 text-amber-600" />
-                            </div>
-                            <div>
-                              <div className="font-semibold text-amber-800 dark:text-amber-500 text-sm">{warning.category}</div>
-                              <div className="text-xs text-amber-800/80 dark:text-amber-500/80 mt-0.5 leading-relaxed">{warning.message}</div>
-                            </div>
+                  <div className="rounded-2xl border border-amber-500/20 bg-amber-500/5 backdrop-blur-md p-6">
+                    <h3 className="mb-4 text-base font-semibold flex items-center text-amber-800">
+                      <AlertTriangle className="mr-2.5 h-5 w-5 text-amber-600" />
+                      Warnings
+                    </h3>
+                    <div className="space-y-4">
+                      {validationWarnings.map((warning) => (
+                        <div key={warning.id} className="flex items-start gap-3 border-b border-amber-500/10 pb-3 last:border-0 last:pb-0">
+                          <div className="h-6 w-6 rounded-lg bg-amber-500/10 flex items-center justify-center mt-0.5 flex-shrink-0">
+                            <AlertTriangle className="h-3.5 w-3.5 text-amber-600" />
                           </div>
-                        ))}
-                      </div>
-                      <div className="mt-4 text-xs text-amber-800/70 dark:text-amber-500/70 font-medium">
-                        * These warnings won't prevent migration, but you may want to review them.
+                          <div>
+                            <div className="font-semibold text-amber-800 text-sm">{warning.category}</div>
+                            <div className="text-xs text-amber-800/80 mt-0.5 leading-relaxed">{warning.message}</div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="mt-4 text-xs text-amber-800/70 font-medium">* These warnings won&apos;t prevent migration, but you may want to review them.</div>
+                  </div>
+
+                  {fixed && (
+                    <div className="animate-fade-in-up rounded-2xl border border-green-500/20 bg-green-500/5 backdrop-blur-md p-6">
+                      <div className="flex items-start gap-4">
+                        <div className="h-10 w-10 rounded-xl bg-green-500/10 flex items-center justify-center flex-shrink-0">
+                          <CheckCircle className="h-5 w-5 text-green-600" />
+                        </div>
+                        <div>
+                          <h3 className="text-base font-semibold text-green-800">Ready for Migration</h3>
+                          <p className="text-sm text-green-800/80 mt-1 leading-relaxed">
+                            Your data has been validated and is ready to be migrated to Xero and Gojee.
+                          </p>
+                          <p className="text-xs text-green-800/70 mt-2 font-medium">
+                            Total records: {validationResults.reduce((acc, r) => acc + r.count, 0).toLocaleString()}
+                          </p>
+                        </div>
                       </div>
                     </div>
                   )}
-
-                  <div className="rounded-2xl border border-green-500/20 bg-green-500/5 backdrop-blur-md p-6">
-                    <div className="flex items-start gap-4">
-                      <div className="h-10 w-10 rounded-xl bg-green-500/10 flex items-center justify-center flex-shrink-0">
-                        <CheckCircle className="h-5 w-5 text-green-600" />
-                      </div>
-                      <div>
-                        <h3 className="text-base font-semibold text-green-800 dark:text-green-500">Ready for Migration</h3>
-                        <p className="text-sm text-green-800/80 dark:text-green-500/80 mt-1 leading-relaxed">
-                          Your data has been validated and is ready to be migrated to {destinationDetails.name}.
-                        </p>
-                        <p className="text-xs text-green-800/70 dark:text-green-500/70 mt-2 font-medium">
-                          Total records: {validationResults.reduce((acc, result) => acc + result.total, 0)}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
                 </div>
               )}
             </CardContent>
             <CardFooter className="flex justify-between border-t border-border/30 pt-6 mt-4">
               <Button
                 variant="outline"
-                onClick={handlePrevStep}
+                onClick={() => router.push("/dashboard/new-migration/map")}
                 className="rounded-xl border-border bg-card hover:bg-muted text-foreground transition-all duration-200"
               >
                 <ArrowLeft className="mr-2 h-4 w-4" /> Back
               </Button>
-              <Button
-                onClick={handleNextStep}
-                disabled={!validationComplete}
-                className="google-button-primary disabled:opacity-50"
-              >
-                Continue to Import <ArrowRight className="ml-2 h-4 w-4" />
-              </Button>
+              <NextButton to="Import" onClick={() => router.push("/dashboard/new-migration/import")} disabled={!validationComplete || !fixed} />
             </CardFooter>
           </Card>
         </div>
       </div>
-
-      {/* CSS for animations */}
-      <style jsx global>{`
-        @keyframes shine {
-          0% {
-            transform: translateX(-100%);
-          }
-          100% {
-            transform: translateX(100%);
-          }
-        }
-        
-        .shine-animation {
-          animation: shine 2s infinite;
-        }
-      `}</style>
     </div>
   )
 }

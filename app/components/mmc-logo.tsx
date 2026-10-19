@@ -1,39 +1,19 @@
-"use client"
-
-import { useState } from "react"
-import Image from "next/image"
 import Link from "next/link"
+import { brand } from "@/lib/brand"
 
-interface MYOBLogoProps {
+interface GojeeLogoProps {
   className?: string
   size?: "sm" | "md" | "lg"
 }
 
-export default function MYOBLogo({ className = "", size = "md" }: MYOBLogoProps) {
-  const sizes = {
-    sm: { width: 120, height: 32 },
-    md: { width: 160, height: 42 },
-    lg: { width: 200, height: 53 },
-  }
-
-  const { width, height } = sizes[size]
-  const [imgSrc, setImgSrc] = useState("/images/myob-logo.png")
-
-  const handleError = () => {
-    setImgSrc(`/placeholder.svg?height=${height}&width=${width}&query=MYOB logo`)
-  }
-
+/** Official Gojee wordmark with the "Migrate" product label. */
+export default function GojeeLogo({ className = "", size = "md" }: GojeeLogoProps) {
+  const height = { sm: 26, md: 32, lg: 40 }[size]
   return (
-    <Link href="/" className={`flex items-center ${className}`}>
-      <Image
-        src={imgSrc || "/placeholder.svg"}
-        alt="MYOB"
-        width={width}
-        height={height}
-        className="h-auto"
-        priority
-        onError={handleError}
-      />
+    <Link href="/dashboard" className={`flex items-center gap-2.5 ${className}`}>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={brand.logoSrc ?? "/images/gojee/gojee-logo.png"} alt={brand.partnerName} style={{ height }} className="w-auto" />
+      <span className="rounded-md bg-accent px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-primary">Migrate</span>
     </Link>
   )
 }

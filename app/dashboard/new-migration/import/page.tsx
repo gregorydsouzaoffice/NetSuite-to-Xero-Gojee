@@ -1,6 +1,11 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
+import { useRouter } from "next/navigation"
+import NextButton from "@/components/next-button"
+import { categories } from "@/lib/demo-data/migration"
+import { useDemo } from "@/lib/demo-store"
+import { periodFromDate } from "@/lib/periods"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
@@ -9,7 +14,20 @@ import {
   AlertTriangle,
   ArrowLeft,
   ArrowRight,
+  BadgeDollarSign,
   Banknote,
+  CalendarDays,
+  Copy,
+  ListChecks,
+  Lock,
+  PiggyBank,
+  TrendingUp,
+  UserCheck,
+  Boxes,
+  Briefcase,
+  Clock,
+  Landmark,
+  Warehouse,
   BookOpen,
   Building2,
   Check,
@@ -21,63 +39,90 @@ import {
   FilePlus,
   FileText,
   Package,
-  Paperclip,
   Receipt,
   RefreshCw,
-  ShoppingCart,
   Users,
   XCircle,
 } from "lucide-react"
 
-// Categories grouped by data domain — one curated hue per domain, not a rainbow
-const dataCategories = [
-  { name: "Chart of Accounts", total: 156, icon: Database, hex: "#7c3aed" },
-  { name: "Customers", total: 87, icon: Users, hex: "#0e9db8" },
-  { name: "Vendors", total: 42, icon: Building2, hex: "#0e9db8" },
-  { name: "Items", total: 65, icon: Package, hex: "#6366f1" },
-  { name: "Sales Orders", total: 124, icon: ShoppingCart, hex: "#ec4899" },
-  { name: "Purchase Orders", total: 89, icon: ClipboardList, hex: "#a855f7" },
-  { name: "Invoices", total: 215, icon: Receipt, hex: "#ec4899" },
-  { name: "Bills", total: 178, icon: FileText, hex: "#a855f7" },
-  { name: "Invoice Payments", total: 142, icon: CreditCard, hex: "#ec4899" },
-  { name: "Bill Payments", total: 89, icon: Banknote, hex: "#a855f7" },
-  { name: "Credit Notes", total: 23, icon: FileMinus, hex: "#ec4899" },
-  { name: "Bill Credits", total: 15, icon: FilePlus, hex: "#a855f7" },
-  { name: "Journals", total: 62, icon: BookOpen, hex: "#7c3aed" },
-  { name: "Attachments", total: 284, icon: Paperclip, hex: "#64748b" },
-]
+// Gojee palette for the inline SVG / style colours (CSS variables can't be used in SVG attributes)
+const C = {
+  green: "#4a9e7a",
+  teal: "#1a9aa8",
+  xero: "#13b5ea",
+  navy: "#36677d",
+  slate: "#64748b",
+  amber: "#f59e0b",
+}
 
-const TOTAL_RECORDS = dataCategories.reduce((acc, cat) => acc + cat.total, 0)
+const ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
+  accounts: Database,
+  customers: Users,
+  vendors: Building2,
+  items: Package,
+  invoices: Receipt,
+  bills: FileText,
+  creditNotes: FileMinus,
+  billCredits: FilePlus,
+  invoicePayments: CreditCard,
+  billPayments: Banknote,
+  bank: Landmark,
+  journals: BookOpen,
+  inventoryJournals: Boxes,
+  stock: Warehouse,
+  jobs: Briefcase,
+  jobTasks: ListChecks,
+  jobTemplates: Copy,
+  jobBudgets: PiggyBank,
+  jobCostRevenue: TrendingUp,
+  retention: Lock,
+  purchaseOrders: ClipboardList,
+  timesheets: Clock,
+  schedule: CalendarDays,
+  staff: UserCheck,
+  billingRates: BadgeDollarSign,
+}
 
-// Planned duration per category scales with record count — big categories
-// visibly take longer, the way a real import does
-const plannedDurationMs = dataCategories.map((cat) => Math.min(Math.max(cat.total * 16, 1400), 6500))
+// Categories grouped by destination — one hue per system, not a rainbow
+function buildPlan(subsidiaryId: string, fromPeriod: string) {
+  const dataCategories = categories(subsidiaryId, fromPeriod).map((c) => ({
+    name: c.label,
+    total: c.count,
+    system: c.system,
+    icon: ICONS[c.key] ?? FileText,
+    hex: c.system === "gojee" ? C.green : ["accounts", "journals", "inventoryJournals"].includes(c.key) ? C.navy : C.xero,
+  }))
+  const TOTAL_RECORDS = dataCategories.reduce((acc, cat) => acc + cat.total, 0)
+  // Planned duration scales (gently) with record count — big categories visibly take longer
+  const plannedDurationMs = dataCategories.map((cat) => Math.min(Math.max(900 + Math.log10(cat.total + 1) * 900, 1400), 4800))
+  return { dataCategories, TOTAL_RECORDS, plannedDurationMs }
+}
 
 // Deliberate "hard moments" the engine hits and recovers from — the drama of
 // a difficult migration, resolved gracefully every time
 const stallScript: Record<string, { at: number; message: string; resolved: string }> = {
-  Vendors: {
+  Bills: {
     at: 55,
-    message: "Reconciling duplicate vendor references…",
-    resolved: "Duplicate references reconciled — resuming transfer",
+    message: "Xero rate limit reached (60 calls/min) — waiting for Retry-After…",
+    resolved: "Rate limit window reset — resuming at full speed",
   },
-  Invoices: {
+  Journals: {
     at: 62,
-    message: "Resolving field conflicts in 3 invoices…",
-    resolved: "Field conflicts resolved automatically",
+    message: "Splitting 3 intercompany journals onto loan account 1810…",
+    resolved: "Intercompany journals balanced in this org",
   },
-  Attachments: {
-    at: 38,
-    message: "Large batch detected — throttling for MYOB API limits…",
-    resolved: "Batch throttled and accepted — resuming at full speed",
+  "Stock on Hand & Serials": {
+    at: 40,
+    message: "NetSuite frozen — loading the cutover delta before Gojee…",
+    resolved: "Delta loaded — Gojee connected to Xero, stock loading",
   },
 }
 
 // Phase of the current category, derived from its progress
 const phaseFor = (p: number) => {
-  if (p < 25) return "Fetching from Xero"
+  if (p < 25) return "Reading from NetSuite staging"
   if (p < 45) return "Transforming records"
-  if (p < 90) return "Writing to MYOB"
+  if (p < 90) return "Writing to destination"
   return "Verifying integrity"
 }
 
@@ -97,12 +142,18 @@ const outputPaths = [
 const confettiPieces = Array.from({ length: 14 }, (_, i) => ({
   id: i,
   left: 8 + ((i * 6.4) % 84),
-  color: ["#7c3aed", "#ec4899", "#0e9db8", "#a855f7", "#f59e0b"][i % 5],
+  color: [C.green, C.teal, C.xero, C.navy, C.amber][i % 5],
   delay: (i % 7) * 90,
   drift: ((i % 5) - 2) * 48,
 }))
 
 export default function ImportProgress() {
+  const router = useRouter()
+  const { state } = useDemo()
+  const { dataCategories, TOTAL_RECORDS, plannedDurationMs } = useMemo(
+    () => buildPlan(state.netsuite.subsidiaryId, periodFromDate(state.fromDate)),
+    [state.netsuite.subsidiaryId, state.fromDate],
+  )
   const [progress, setProgress] = useState(0)
   const [status, setStatus] = useState("Preparing import…")
   const [isComplete, setIsComplete] = useState(false)
@@ -136,9 +187,11 @@ export default function ImportProgress() {
   useEffect(() => {
     if (!showInitialAnimation) return
     addLog("Starting migration process…", "info")
+    addLog("Connecting to NetSuite (SuiteQL, OAuth 2.0)…", "info")
+    addLog("Connection established — reading from staging", "success")
     addLog("Connecting to Xero API…", "info")
     addLog("Connection established", "success")
-    addLog("Connecting to MYOB API…", "info")
+    addLog("Connecting to Gojee…", "info")
     addLog("Connection established", "success")
     addLog(`Preparing ${TOTAL_RECORDS.toLocaleString()} records across ${dataCategories.length} categories…`, "info")
 
@@ -284,7 +337,7 @@ export default function ImportProgress() {
       : 0
   const liveRecordCount = migratedCount + inFlightCount
   const activeCat = currentCategory < dataCategories.length ? dataCategories[currentCategory] : null
-  const activeHex = activeCat?.hex ?? "#7c3aed"
+  const activeHex = activeCat?.hex ?? C.green
   const elapsedLabel = `${Math.floor(elapsed / 60)}:${String(elapsed % 60).padStart(2, "0")}`
 
   return (
@@ -292,20 +345,20 @@ export default function ImportProgress() {
       <div className="container py-8 max-w-6xl mx-auto">
         <div className="mb-8">
           <Link
-            href="/dashboard"
+            href="/dashboard/new-migration/validate"
             className="flex items-center text-sm text-muted-foreground hover:text-foreground transition-colors group"
           >
             <div className="mr-2 h-8 w-8 rounded-full bg-card border border-border/60 flex items-center justify-center group-hover:border-primary/30 group-hover:bg-primary/5 transition-all shadow-sm">
               <ArrowLeft className="h-4 w-4" />
             </div>
-            Back to Dashboard
+            Back to Validate
           </Link>
         </div>
 
         <div className="space-y-6">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight gradient-text pb-1">MMC Convert Migration in Progress</h1>
-            <p className="text-muted-foreground mt-1">Xero to MYOB data migration</p>
+            <h1 className="text-3xl font-bold tracking-tight gradient-text pb-1">Migration in Progress</h1>
+            <p className="text-muted-foreground mt-1">NetSuite to Xero + Gojee data migration</p>
           </div>
 
           {showInitialAnimation ? (
@@ -374,7 +427,7 @@ export default function ImportProgress() {
                           </div>
                           <h3 className="text-2xl font-semibold animate-fade-in-up">Migration Successful</h3>
                           <p className="text-muted-foreground mt-1 animate-fade-in-up animation-delay-200">
-                            All your data has been migrated to MYOB in {elapsedLabel}
+                            All your data has been migrated to Xero and Gojee in {elapsedLabel}
                           </p>
                         </div>
 
@@ -430,9 +483,9 @@ export default function ImportProgress() {
                         </div>
 
                         {/* The conduit: dark command-center panel */}
-                        <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-[#150f24] p-5 shadow-2xl">
-                          <div className="pointer-events-none absolute -top-24 left-1/4 h-64 w-64 rounded-full bg-[#7c3aed]/20 blur-3xl" />
-                          <div className="pointer-events-none absolute -bottom-24 right-1/4 h-64 w-64 rounded-full bg-[#ec4899]/15 blur-3xl" />
+                        <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-[#001b2e] p-5 shadow-2xl">
+                          <div className="pointer-events-none absolute -top-24 left-1/4 h-64 w-64 rounded-full bg-[#4a9e7a]/25 blur-3xl" />
+                          <div className="pointer-events-none absolute -bottom-24 right-1/4 h-64 w-64 rounded-full bg-[#13b5ea]/15 blur-3xl" />
 
                           {/* Current category chip */}
                           {activeCat && (
@@ -460,9 +513,9 @@ export default function ImportProgress() {
                             {/* Source */}
                             <div className="relative z-10 flex shrink-0 flex-col items-center gap-2">
                               <div className="relative">
-                                <div className="absolute -inset-1.5 rounded-2xl bg-[#13b5ea]/25 blur-md animate-pulse" />
+                                <div className="absolute -inset-1.5 rounded-2xl bg-[#36677d]/40 blur-md animate-pulse" />
                                 <div className="relative flex h-20 w-20 items-center justify-center rounded-2xl bg-white p-3 shadow-lg sm:h-24 sm:w-24">
-                                  <img src="/images/Xero-logo.png" alt="Xero" className="h-full w-full object-contain" />
+                                  <img src="/images/netsuite/netsuite-mark.png" alt="NetSuite" className="h-full w-full object-contain" />
                                 </div>
                               </div>
                               <span className="text-[10px] font-semibold uppercase tracking-widest text-white/40">
@@ -475,12 +528,12 @@ export default function ImportProgress() {
                               <svg viewBox="0 0 640 220" className="h-auto w-full" aria-hidden="true">
                                 <defs>
                                   <linearGradient id="laneIn" x1="0%" y1="0%" x2="100%" y2="0%">
-                                    <stop offset="0%" stopColor="#13b5ea" stopOpacity="0.45" />
-                                    <stop offset="100%" stopColor="#8b5cf6" stopOpacity="0.5" />
+                                    <stop offset="0%" stopColor="#36677d" stopOpacity="0.6" />
+                                    <stop offset="100%" stopColor="#4a9e7a" stopOpacity="0.5" />
                                   </linearGradient>
                                   <linearGradient id="laneOut" x1="0%" y1="0%" x2="100%" y2="0%">
-                                    <stop offset="0%" stopColor="#8b5cf6" stopOpacity="0.5" />
-                                    <stop offset="100%" stopColor="#ec4899" stopOpacity="0.45" />
+                                    <stop offset="0%" stopColor="#4a9e7a" stopOpacity="0.5" />
+                                    <stop offset="100%" stopColor="#13b5ea" stopOpacity="0.45" />
                                   </linearGradient>
                                 </defs>
 
@@ -543,7 +596,7 @@ export default function ImportProgress() {
                                   outputPaths.map((d, lane) =>
                                     [0, 1].map((n) => (
                                       <g key={`pout-${lane}-${n}`}>
-                                        <circle r="6" fill="#ec4899" opacity="0.25">
+                                        <circle r="6" fill="#13b5ea" opacity="0.25">
                                           <animateMotion
                                             dur={`${1.9 + lane * 0.25}s`}
                                             begin={`${-(n * 1 + lane * 0.45)}s`}
@@ -551,7 +604,7 @@ export default function ImportProgress() {
                                             path={d}
                                           />
                                         </circle>
-                                        <circle r="3" fill="#ec4899">
+                                        <circle r="3" fill="#13b5ea">
                                           <animateMotion
                                             dur={`${1.9 + lane * 0.25}s`}
                                             begin={`${-(n * 1 + lane * 0.45)}s`}
@@ -567,9 +620,9 @@ export default function ImportProgress() {
                               {/* Transformation core */}
                               <div className="absolute left-1/2 top-1/2 z-10 -translate-x-1/2 -translate-y-1/2">
                                 <div key={`core-${currentCategory}`} className="core-pulse relative h-20 w-20 sm:h-24 sm:w-24">
-                                  <div className="absolute -inset-3 rounded-full bg-[#8b5cf6]/25 blur-xl animate-pulse" />
+                                  <div className="absolute -inset-3 rounded-full bg-[#4a9e7a]/25 blur-xl animate-pulse" />
                                   <div className="conic-ring absolute inset-0 rounded-full animate-spin-slower" />
-                                  <div className="absolute inset-[4px] flex flex-col items-center justify-center rounded-full bg-[#1c1430] shadow-inner">
+                                  <div className="absolute inset-[4px] flex flex-col items-center justify-center rounded-full bg-[#00263e] shadow-inner">
                                     <span className="text-lg font-bold text-white tabular-nums sm:text-xl">
                                       {Math.round(progress)}%
                                     </span>
@@ -585,11 +638,14 @@ export default function ImportProgress() {
                             <div className="relative z-10 flex shrink-0 flex-col items-center gap-2">
                               <div className="relative">
                                 <div
-                                  className="absolute -inset-1.5 rounded-2xl bg-[#ec4899]/30 blur-md animate-pulse transition-opacity duration-1000"
+                                  className="absolute -inset-1.5 rounded-2xl bg-[#13b5ea]/30 blur-md animate-pulse transition-opacity duration-1000"
                                   style={{ opacity: 0.35 + (progress / 100) * 0.65 }}
                                 />
-                                <div className="relative flex h-20 w-20 items-center justify-center rounded-2xl bg-white p-3 shadow-lg sm:h-24 sm:w-24">
-                                  <img src="/images/myob-logo.png" alt="MYOB" className="h-full w-full object-contain" />
+                                <div className="relative flex h-20 w-20 flex-col items-center justify-center gap-1.5 rounded-2xl bg-white p-2.5 shadow-lg sm:h-24 sm:w-24">
+                                  <span className="h-8 w-8 overflow-hidden rounded-full sm:h-9 sm:w-9">
+                                    <img src="/images/Xero-logo.png" alt="Xero" className="h-full w-full scale-[1.9] object-contain" />
+                                  </span>
+                                  <img src="/images/gojee/gojee-tile.png" alt="Gojee" className="h-7 w-7 sm:h-8 sm:w-8" />
                                 </div>
                               </div>
                               <span className="text-[10px] font-semibold uppercase tracking-widest text-white/40">
@@ -695,15 +751,11 @@ export default function ImportProgress() {
                           className="rounded-xl border-border bg-card hover:bg-muted text-foreground transition-all duration-200"
                           asChild
                         >
-                          <Link href="/dashboard">
-                            <ArrowLeft className="mr-2 h-4 w-4" /> Back to Dashboard
+                          <Link href="/dashboard/new-migration/validate">
+                            <ArrowLeft className="mr-2 h-4 w-4" /> Back
                           </Link>
                         </Button>
-                        <Button className="premium-button rounded-xl" asChild>
-                          <Link href="/dashboard/new-migration/report">
-                            View Detailed Report <ArrowRight className="ml-2 h-4 w-4" />
-                          </Link>
-                        </Button>
+                        <NextButton to="Report" onClick={() => router.push("/dashboard/new-migration/report")} />
                       </>
                     ) : (
                       <Button
@@ -732,7 +784,7 @@ export default function ImportProgress() {
                       </div>
                       <div className="mt-2 text-xs text-muted-foreground">
                         {isComplete
-                          ? "Your data has been successfully migrated to MYOB"
+                          ? "Your data has been successfully migrated to Xero and Gojee"
                           : (stallMessage ?? status)}
                       </div>
                     </div>
@@ -765,7 +817,7 @@ export default function ImportProgress() {
                 {/* Terminal log */}
                 <Card className="google-card bg-card/65 border border-border/50 backdrop-blur-md shadow-sm overflow-hidden">
                   <CardContent className="p-4">
-                    <div className="overflow-hidden rounded-xl border border-white/10 bg-[#120d1d] shadow-inner">
+                    <div className="overflow-hidden rounded-xl border border-white/10 bg-[#00172a] shadow-inner">
                       <div className="flex items-center justify-between border-b border-white/10 px-3 py-2">
                         <div className="flex items-center gap-1.5">
                           <span className="h-2.5 w-2.5 rounded-full bg-[#ff5f57]" />
@@ -800,7 +852,7 @@ export default function ImportProgress() {
                                     ? "text-amber-400"
                                     : log.type === "success"
                                       ? "text-green-400"
-                                      : "text-violet-400"
+                                      : "text-teal-300"
                               }`}
                             >
                               {log.type === "error" ? "✕" : log.type === "warning" ? "⚠" : log.type === "success" ? "✓" : "›"}
@@ -887,8 +939,8 @@ export default function ImportProgress() {
           background: conic-gradient(
             from 0deg,
             transparent 0%,
-            #8b5cf6 20%,
-            #ec4899 45%,
+            #4a9e7a 20%,
+            #13b5ea 45%,
             #13b5ea 70%,
             transparent 90%
           );

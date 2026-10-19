@@ -17,6 +17,10 @@ module.exports = {
       },
     },
     extend: {
+      fontFamily: {
+        sans: ["var(--font-sans)", "ui-sans-serif", "system-ui", "sans-serif"],
+        mono: ["var(--font-mono)", "ui-monospace", "monospace"],
+      },
       colors: {
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
@@ -56,6 +60,7 @@ module.exports = {
           purple: "hsl(var(--brand-purple))",
           violet: "hsl(var(--brand-violet))",
           pink: "hsl(var(--brand-pink))",
+          mint: "hsl(var(--brand-mint))",
         },
         sidebar: {
           DEFAULT: "hsl(var(--sidebar-background))",

@@ -1,115 +1,61 @@
 "use client"
 
-import { useState, useEffect } from "react"
 import Link from "next/link"
-import { useRouter, useSearchParams } from "next/navigation"
+import { useRouter } from "next/navigation"
+import { ArrowLeft, CheckCircle, Circle, Database } from "lucide-react"
+import MigrationStepper from "@/components/migration-stepper"
+import NextButton from "@/components/next-button"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card"
-import { ArrowLeft, ArrowRight, CheckCircle, Database, FileText, Map, CheckSquare, Upload } from "lucide-react"
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
+import { NETSUITE_ACCOUNT, SUBSIDIARY_BY_ID, XERO_IDENTITY, XERO_ORG_BY_ID } from "@/lib/demo-data/momento"
+import { useDemo } from "@/lib/demo-store"
+
+const RETURN = "/dashboard/new-migration/connect"
 
 export default function ConnectAccounts() {
   const router = useRouter()
-  const searchParams = useSearchParams()
-  const source = searchParams.get("source") || "xero"
-  const destination = searchParams.get("destination") || "myob" // Default to myob
-  const [currentStep, setCurrentStep] = useState(1)
-  const [progress, setProgress] = useState(20)
-  const [mounted, setMounted] = useState(false)
+  const { state, hydrated } = useDemo()
+  const { netsuite, xero, gojee } = state
+  const subsidiary = SUBSIDIARY_BY_ID[netsuite.subsidiaryId]
+  const org = XERO_ORG_BY_ID[xero.tenantId]
 
-  useEffect(() => {
-    setMounted(true)
-  }, [])
+  const platforms = [
+    {
+      key: "netsuite",
+      role: "Source Platform",
+      name: "Oracle NetSuite",
+      logo: "/images/netsuite/netsuite-mark.png",
+      connected: netsuite.connected,
+      detail: netsuite.connected ? [subsidiary?.name ?? "", `Account ${netsuite.accountId}`] : null,
+      href: `/login/netsuite?account=${NETSUITE_ACCOUNT.accountId}&return=${RETURN}`,
+    },
+    {
+      key: "xero",
+      role: "Destination · Accounting",
+      name: "Xero",
+      logo: "/images/Xero-logo.png",
+      zoom: true,
+      connected: xero.connected,
+      detail: xero.connected ? [org?.name ?? "", XERO_IDENTITY.email] : null,
+      href: `/login/xero?return=${RETURN}`,
+    },
+    {
+      key: "gojee",
+      role: "Destination · Jobs & inventory",
+      name: "Gojee",
+      logo: "/images/gojee/gojee-tile.png",
+      connected: gojee.connected,
+      detail: gojee.connected ? [org?.name.replace(/ Pty Ltd$/, "") ?? "", "Signed in automatically with Xero"] : null,
+      href: `/login/gojee?return=${RETURN}`,
+    },
+  ]
 
-  const handleNextStep = () => {
-    router.push(`/dashboard/new-migration/extract?source=${source}&destination=${destination}`)
+  const nextToConnect = platforms.find((p) => !p.connected)
+
+  const handleNext = () => {
+    if (nextToConnect) router.push(nextToConnect.href)
+    else router.push("/dashboard/new-migration/extract")
   }
-
-  const handlePrevStep = () => {
-    router.push("/dashboard/new-migration")
-  }
-
-  const handleXeroConnect = () => {
-    router.push(`/login/xero?destination=${destination}`)
-  }
-
-  const handleMYOBConnect = () => {
-    router.push(`/login/myob?source=${source}`)
-  }
-
-  // Get source software details
-  const getSourceDetails = () => {
-    const softwareMap = {
-      xero: {
-        name: "Xero",
-        logo: "/images/Xero-logo.png",
-        color: "blue",
-      },
-      quickbooks: {
-        name: "QuickBooks Online",
-        logo: "/images/Qbo-logo.png",
-        color: "green",
-      },
-      sage: {
-        name: "Sage",
-        logo: "/images/Sage-50-logo.png",
-        color: "emerald",
-      },
-    }
-
-    return (
-      softwareMap[source] || {
-        name: "Selected Software",
-        logo: "/placeholder.svg?height=60&width=120",
-        color: "primary",
-      }
-    )
-  }
-
-  const getDestinationDetails = () => {
-    const softwareMap = {
-      xero: {
-        name: "Xero",
-        logo: "/images/Xero-logo.png",
-        color: "blue",
-      },
-      quickbooks: {
-        name: "QuickBooks Online",
-        logo: "/images/Qbo-logo.png",
-        color: "green",
-      },
-      sage: {
-        name: "Sage",
-        logo: "/images/Sage-50-logo.png",
-        color: "emerald",
-      },
-      capium: {
-        name: "Capium",
-        logo: "/images/Capium-logo.png",
-        color: "purple",
-      },
-      freeagent: {
-        name: "FreeAgent",
-        logo: "/images/FreeAgent_logo.png",
-        color: "red",
-      },
-      "myob": {
-        name: "MYOB",
-        logo: "/images/myob-logo.png",
-        color: "red",
-      },
-    }
-
-    return (
-      softwareMap[destination] || {
-        name: "Selected Software",
-        logo: "/placeholder.svg?height=60&width=120",
-        color: "primary",
-      }
-    )
-  }
-
-  const sourceDetails = getSourceDetails()
-  const destinationDetails = getDestinationDetails()
 
   return (
     <div className="flex min-h-screen flex-col bg-gradient-to-br from-background via-background to-muted/20">
@@ -119,7 +65,7 @@ export default function ConnectAccounts() {
             href="/dashboard/new-migration"
             className="flex items-center text-sm text-muted-foreground hover:text-foreground transition-colors group"
           >
-            <div className="mr-2 h-8 w-8 rounded-full bg-card border border-border/60 flex items-center justify-center group-hover:border-primary/30 group-hover:bg-primary/5 transition-all shadow-sm">
+            <div className="mr-2 h-8 w-8 rounded-full bg-card border border-border/60 flex items-center justify-center group-hover:border-primary/30 group-hover:bg-primary/5 transition-all">
               <ArrowLeft className="h-4 w-4" />
             </div>
             Back to Software Selection
@@ -128,86 +74,11 @@ export default function ConnectAccounts() {
 
         <div className="space-y-8">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight gradient-text">
-              New Migration: To {destinationDetails.name}
-            </h1>
+            <h1 className="text-3xl font-bold tracking-tight gradient-text">New Migration: NetSuite to Xero + Gojee</h1>
             <p className="text-muted-foreground mt-1">Connect your accounts to begin migration</p>
           </div>
 
-          <div className="space-y-3">
-            <div className="flex justify-between text-xs font-semibold tracking-wide uppercase text-muted-foreground">
-              <div>Migration Progress</div>
-              <div className="text-primary font-bold">20%</div>
-            </div>
-            <div className="relative h-2 w-full overflow-hidden rounded-full bg-secondary">
-              <div
-                className="absolute inset-0 opacity-20 blur-sm rounded-full bg-primary transition-all duration-500"
-                style={{ width: `${mounted ? 20 : 0}%` }}
-              ></div>
-
-              <div
-                className="absolute inset-0 rounded-full bg-primary transition-all duration-500"
-                style={{ width: `${mounted ? 20 : 0}%` }}
-              ></div>
-
-              {/* Animated shine effect */}
-              <div
-                className="absolute inset-0 rounded-full bg-gradient-to-r from-transparent via-white/20 to-transparent shine-animation"
-                style={{ width: `${mounted ? 20 : 0}%` }}
-              ></div>
-
-              {/* Segmented markers */}
-              <div className="absolute inset-0 flex">
-                {[20, 40, 60, 80].map((segment) => (
-                  <div key={segment} className="h-full flex-1 border-r border-background/20" aria-hidden="true" />
-                ))}
-              </div>
-            </div>
-          </div>
-
-          {/* Step navigation with improved visual styling */}
-          <div className="relative flex justify-between border-b border-border/40 pb-6">
-            <div
-              className="absolute left-0 bottom-0 h-0.5 bg-primary transition-all duration-500"
-              style={{ width: `0%` }}
-            ></div>
-
-            {[
-              { icon: <Database className="h-5 w-5" />, label: "Connect" },
-              { icon: <FileText className="h-5 w-5" />, label: "Extract" },
-              { icon: <Map className="h-5 w-5" />, label: "Map" },
-              { icon: <CheckSquare className="h-5 w-5" />, label: "Validate" },
-              { icon: <Upload className="h-5 w-5" />, label: "Import" },
-            ].map((step, index) => {
-              const stepNum = index + 1
-              const isActive = stepNum === 1
-              const isCompleted = false
-
-              return (
-                <Button
-                  key={index}
-                  variant="ghost"
-                  className={`flex flex-col items-center gap-2 rounded-xl px-4 py-2 transition-all duration-300 h-auto ${
-                    isActive ? "text-primary font-semibold" : isCompleted ? "text-primary/80" : "text-muted-foreground"
-                  } ${stepNum > 1 ? "opacity-50 cursor-not-allowed" : "hover:bg-primary/5 hover:text-primary"}`}
-                  disabled={stepNum > 1}
-                >
-                  <div
-                    className={`flex h-11 w-11 items-center justify-center rounded-2xl border transition-all duration-300 shadow-sm ${
-                      isActive
-                        ? "border-primary bg-primary/10 text-primary shadow-inner"
-                        : isCompleted
-                          ? "border-primary/30 bg-primary/5 text-primary"
-                          : "border-border/60 bg-card"
-                    }`}
-                  >
-                    {isCompleted ? <CheckCircle className="h-5 w-5 text-primary" /> : step.icon}
-                  </div>
-                  <span className="text-xs font-medium mt-1">{step.label}</span>
-                </Button>
-              )
-            })}
-          </div>
+          <MigrationStepper step={1} />
 
           <Card className="google-card bg-card/65 backdrop-blur-md shadow-sm border border-border/50 overflow-hidden relative">
             <div className="absolute top-0 right-0 w-32 h-32 bg-primary/5 rounded-bl-[100px] -z-10"></div>
@@ -217,119 +88,74 @@ export default function ConnectAccounts() {
                 Step 1: Connect Your Accounts
               </CardTitle>
               <CardDescription className="text-muted-foreground mt-1">
-                Securely connect to your source and {destinationDetails.name} accounts
+                Connect NetSuite and Xero — Gojee signs in automatically with your Xero login. Press Next to connect each one in turn.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6 pt-2">
-              <div className="grid gap-6 md:grid-cols-2">
-                <Card className="bg-card/50 rounded-2xl border border-border/40 overflow-hidden relative transition-all duration-300 hover:shadow-md hover:border-border">
-                  <div className="absolute top-0 right-0 w-16 h-16 bg-blue-500/5 rounded-bl-[80px] -z-10"></div>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-base font-semibold">Source Platform</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-4 pt-1">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-4">
-                        <div className="h-12 w-12 rounded-2xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center shadow-sm">
-                          <img
-                            alt={`${sourceDetails.name} Logo`}
-                            className="h-8 w-auto object-contain"
-                            src={sourceDetails.logo || "/placeholder.svg"}
-                          />
+              <div className="grid gap-6 md:grid-cols-3">
+                {platforms.map((p) => (
+                  <Card
+                    key={p.key}
+                    className={`bg-card/50 rounded-2xl border overflow-hidden relative transition-all duration-300 hover:shadow-md ${
+                      hydrated && nextToConnect?.key === p.key ? "border-primary/50 ring-2 ring-primary/15" : "border-border/40"
+                    }`}
+                  >
+                    <div className="absolute top-0 right-0 w-16 h-16 bg-primary/5 rounded-bl-[80px] -z-10"></div>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-base font-semibold">{p.role}</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-4 pt-1">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-4">
+                          <div className="h-12 w-12 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center shadow-sm overflow-hidden">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img alt={`${p.name} logo`} className={`h-8 w-8 object-contain ${p.zoom ? "scale-[1.9]" : ""}`} src={p.logo} />
+                          </div>
+                          <div className="font-semibold text-foreground">{p.name}</div>
                         </div>
-                        <div>
-                          <div className="font-semibold text-foreground">{sourceDetails.name}</div>
-                          <div className="text-xs text-muted-foreground">Source Platform</div>
-                        </div>
+                        {p.connected ? (
+                          <div className="h-8 w-8 rounded-full bg-green-500/10 border border-green-500/20 flex items-center justify-center">
+                            <CheckCircle className="h-4 w-4 text-green-600" />
+                          </div>
+                        ) : (
+                          <div className="h-8 w-8 rounded-full bg-muted border border-border flex items-center justify-center">
+                            <Circle className="h-4 w-4 text-muted-foreground" />
+                          </div>
+                        )}
                       </div>
-                      <div className="h-8 w-8 rounded-full bg-green-500/10 border border-green-500/20 flex items-center justify-center">
-                        <CheckCircle className="h-4 w-4 text-green-600" />
+                      <div className="rounded-xl border border-border/45 bg-muted/20 backdrop-blur-sm p-3.5 min-h-[68px]">
+                        <div className="text-xs text-muted-foreground">{p.connected ? "Connected as:" : "Status:"}</div>
+                        {p.connected && p.detail ? (
+                          <>
+                            <div className="font-semibold text-sm text-foreground mt-0.5 break-words">{p.detail[0]}</div>
+                            <div className="text-xs text-muted-foreground break-all">{p.detail[1]}</div>
+                          </>
+                        ) : (
+                          <div className="font-semibold text-sm text-foreground mt-0.5">
+                            {p.key === "gojee" ? "Signs in automatically with Xero" : "Not connected yet"}
+                          </div>
+                        )}
                       </div>
-                    </div>
-                    <div className="rounded-xl border border-border/45 bg-muted/20 backdrop-blur-sm p-3.5">
-                      <div className="text-xs text-muted-foreground">Connected as:</div>
-                      <div className="font-semibold text-sm text-foreground mt-0.5">{"kylie.farr@myob.com"}</div>
-                    </div>
-                  </CardContent>
-                  <CardFooter className="pt-2">
-                    <Button
-                      onClick={handleXeroConnect}
-                      variant="outline"
-                      className="w-full rounded-xl border-border bg-card hover:bg-muted text-foreground transition-all duration-200"
-                    >
-                      {searchParams.get("xero_connected") ? "Reconnect Account" : "Connect Account"}
-                    </Button>
-                  </CardFooter>
-                </Card>
-
-                <Card className="bg-card/50 rounded-2xl border border-border/40 overflow-hidden relative transition-all duration-300 hover:shadow-md hover:border-border">
-                  <div className="absolute top-0 right-0 w-16 h-16 bg-primary/5 rounded-bl-[80px] -z-10"></div>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-base font-semibold">Destination Platform</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-4 pt-1">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-4">
-                        <div className="h-12 w-12 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center shadow-sm">
-                          <img
-                            alt={`${destinationDetails.name} Logo`}
-                            className="h-8 w-auto object-contain"
-                            src={destinationDetails.logo || "/placeholder.svg"}
-                          />
-                        </div>
-                        <div>
-                          <div className="font-semibold text-foreground">{destinationDetails.name}</div>
-                          <div className="text-xs text-muted-foreground">Destination Platform</div>
-                        </div>
-                      </div>
-                      <div className="h-8 w-8 rounded-full bg-green-500/10 border border-green-500/20 flex items-center justify-center">
-                        <CheckCircle className="h-4 w-4 text-green-600" />
-                      </div>
-                    </div>
-                    <div className="rounded-xl border border-border/45 bg-muted/20 backdrop-blur-sm p-3.5">
-                      <div className="text-xs text-muted-foreground">Connected as:</div>
-                      <div className="font-semibold text-sm text-foreground mt-0.5">kylie.farr@myob.com</div>
-                    </div>
-                  </CardContent>
-                  <CardFooter className="pt-2">
-                    <Button
-                      onClick={handleMYOBConnect}
-                      variant="outline"
-                      className="w-full rounded-xl border-border bg-card hover:bg-muted text-foreground transition-all duration-200"
-                    >
-                      {searchParams.get("myob_connected") ? "Reconnect Account" : "Connect Account"}
-                    </Button>
-                  </CardFooter>
-                </Card>
+                    </CardContent>
+                    <CardFooter className="pt-2">
+                      <Button
+                        onClick={() => router.push(p.href)}
+                        variant="outline"
+                        className="w-full rounded-xl border-border bg-card hover:bg-muted text-foreground transition-all duration-200"
+                      >
+                        {p.connected ? "Reconnect Account" : "Connect Account"}
+                      </Button>
+                    </CardFooter>
+                  </Card>
+                ))}
               </div>
             </CardContent>
             <CardFooter className="flex justify-end border-t border-border/30 pt-6 mt-4">
-              <Button
-                onClick={handleNextStep}
-                className="google-button-primary"
-              >
-                Continue to Extraction <ArrowRight className="ml-2 h-4 w-4" />
-              </Button>
+              <NextButton to={nextToConnect ? `Connect ${nextToConnect.name.replace("Oracle ", "")}` : "Extract"} onClick={handleNext} />
             </CardFooter>
           </Card>
         </div>
       </div>
-
-      {/* CSS for animations */}
-      <style jsx global>{`
-        @keyframes shine {
-          0% {
-            transform: translateX(-100%);
-          }
-          100% {
-            transform: translateX(100%);
-          }
-        }
-        
-        .shine-animation {
-          animation: shine 2s infinite;
-        }
-      `}</style>
     </div>
   )
 }
